@@ -7,7 +7,7 @@ dependencies=(mdbook tango)
 function install_dep() {
     local dep=$1
 
-    if ! command -v mdbook; then
+    if ! command -v $dep; then
         cargo install $dep
     fi
 }

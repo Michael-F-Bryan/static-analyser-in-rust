@@ -48,7 +48,7 @@ impl From<usize> for Token {
 ```
 
 
-## Starting the Lexing
+## Tokenizing Individual Atoms
 
 To make things easy, we'll break tokenizing up into little functions which 
 take some string slice (`&str`) and spit out either a token or an error.

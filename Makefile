@@ -15,6 +15,7 @@ open: build
 build: build-crate build-docs
 
 build-crate:
+	tango
 	cargo build
 
 build-docs:
