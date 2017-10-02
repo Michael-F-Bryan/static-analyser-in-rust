@@ -6,9 +6,9 @@ cache:
 before_cache:
 - chmod -R a+r $HOME/.cargo
 script:
-- cargo build
-- cargo test
-- cargo doc
+- tango
+- cargo build -v
+- cargo test -v 
 after_success: "./ci/deploy.sh"
 env:
   global:
