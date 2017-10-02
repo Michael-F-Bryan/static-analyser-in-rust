@@ -47,6 +47,13 @@ Now *finally* we've got everything set up to do the static analysis.
 pub mod analysis;
 ```
 
+We also need to handle internal errors. To keep things clean lets put that in
+its own module too.
+
+```rust
+pub mod errors;
+```
+
 
 ## A Note on Project Design
 

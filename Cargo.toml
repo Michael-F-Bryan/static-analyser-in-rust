@@ -4,7 +4,8 @@ build = "build.rs"
 name = "static-analyser"
 version = "0.1.0"
 
-[dependencies]
-
 [build-dependencies]
 tango = "0.7"
+
+[dependencies]
+error-chain = "0.11"
