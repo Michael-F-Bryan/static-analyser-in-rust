@@ -15,6 +15,10 @@ begin
 end;
 ```
 
+> **Note:** The API docs for this crate should be placed alongside the book.
+> You can access then [here](../doc/static_analyser/index.html).
+
+
 First up, lets import some crates we're going to need:
 
 ```rust

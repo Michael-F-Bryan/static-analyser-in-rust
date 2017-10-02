@@ -1,1 +1,4 @@
 title = "Create a Static Analyser in Rust"
+
+[output.html]
+destination = "target/book"

@@ -8,6 +8,7 @@ before_cache:
 script:
 - cargo build
 - cargo test
+- cargo doc
 after_success: "./ci/deploy.sh"
 env:
   global:
