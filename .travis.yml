@@ -1,10 +1,13 @@
 language: rust
 install: ci/install.sh
 cache:
-  - cargo
+- cargo
 before_cache:
-  - chmod -R a+r $HOME/.cargo
-script: 
-  - cargo build
-  - cargo test
-after_success: ./ci/deploy.sh
+- chmod -R a+r $HOME/.cargo
+script:
+- cargo build
+- cargo test
+after_success: "./ci/deploy.sh"
+env:
+  global:
+    secure: BoFP/9HX5J/0fqpK2kBhksS6+004wSopsOZt3fxSflWaCSp/C8HgQ07z+roEI9zdNgMX4KInhjbThkr65cCsaYyTtucQVRRWnYOK6mvj6ALGigclhQDFsqNoyoUKcuOWC0mR9hDsGGnKGGmPaTHQfSF4U4fFRFCNYZPG/vrwh/GtLceWfEcxGQ4fhb6uBhZCufj0vy0AIIRTS+L/m7NGTDLVnBcAwJhj+U0NEWoWkMPBq4dDRq8Pz/gydeVSjKWPQix0leoTj6Y0uZ3HQrdiA/Vibkv4U+jpHUcmtnXXlcX5bMaH2BF+Ik5ldEBq0rQ8jGH7WkVbu4QVluJKDtkDO4hx3iLAK8FLbmWC+NXfepHT1gK8WZ2tvZkJux4iLycNSayIl2Upu8VfTOmkklUD9MaO6Fdo3ZyVDt/ejYwm2+XOo7Z8Pr8ZRy9Fn3wevua8KgMy76/+YXWM8X7FuaYsG7lISjNAVR32vurN+sIfNkovIb9EsNe8WdCU0iMwoC8jQ6Wy+TiAkSgOg+dQ8TFJWWeIjgaGpLlcQvVs6dAFt3a1W12Uh8wpOY2B+KjSB6SgToQuT1tDXnuEC0+XWUYAxd9oQsSsn5emOUb1gUmXGWzNFjVV0hkFJCGOKZjpSyo8yGR2fw2G8YP+IjmvcwajeSRHsCtqD32Rdktse3vNuYc=
