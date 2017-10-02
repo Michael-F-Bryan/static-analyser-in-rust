@@ -1,7 +1,9 @@
 OPEN := xdg-open
 
+
 usage:
 	-@ echo "Usage:"
+	-@ echo "    open         Build the project and open the tutorial in your browser"
 	-@ echo "    build        Build both the crate and accompanying book"
 	-@ echo "    word-count   Get some (rough) statistics about the repository"
 	-@ echo "    usage        Print this help text"
@@ -18,7 +20,5 @@ build-crate:
 build-docs:
 	mdbook build
 
-
 word-count:
 	-@ wc --words $$(find src/ -name "*.md")
-
