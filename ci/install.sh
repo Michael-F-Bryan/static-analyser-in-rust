@@ -2,7 +2,6 @@
 
 set -ex
 
-dependencies=(mdbook tango)
 
 function install_dep() {
     local dep=$1
@@ -13,9 +12,6 @@ function install_dep() {
 }
 
 
-for dependency in $dependencies; do
-    install_dep $dependency
-done
-
-
+install_dep mdbook
+install_dep tango
 pip install --user ghp-import

@@ -1,5 +1,9 @@
 # Lexical Analysis
 
+```rust
+//! Module for performing lexical analysis on source code.
+```
+
 Before anything else, lets import some things we'll require.
 
 ```rust
@@ -13,15 +17,21 @@ different types representing multiple different things, so it makes sense to
 use a Rust enum here.
 
 ```rust
+/// Any valid token in the Delphi programming language.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Integer(usize),
     Identifier(String),
+    QuotedString(String),
+    End,
     Plus,
     Minus,
     Asterisk,
     Slash,
     Dot,
+    Colon,
+    Semicolon,
+    Equals,
 }
 ```
 
