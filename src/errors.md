@@ -5,10 +5,13 @@ errors. Feel free to skip past this.
 
 
 ```rust
+//! Types and traits used for internal errors.
+
 error_chain!{
     foreign_links {
         Io(::std::io::Error) #[doc = "Wrapper around a `std::io::Error`"];
         Utf8(::std::str::Utf8Error) #[doc = "An error parsing data as UTF-8"];
+        FloatParsing(::std::num::ParseFloatError) #[doc = "A float parsing error"];
     }
 }
 ```

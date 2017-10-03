@@ -1,5 +1,7 @@
 # Lexical Analysis
 
+It's always nice to add doc-comments so rustdoc knows what this module does.
+
 ```rust
 //! Module for performing lexical analysis on source code.
 ```
@@ -21,6 +23,7 @@ use a Rust enum here.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Integer(usize),
+    Decimal(f64),
     Identifier(String),
     QuotedString(String),
     End,
@@ -55,6 +58,12 @@ impl From<usize> for Token {
         Token::Integer(other)
     }
 }
+
+impl From<f64> for Token {
+    fn from(other: f64) -> Token {
+        Token::Decimal(other)
+    }
+}
 ```
 
 
@@ -87,7 +96,8 @@ Making sure to return the number of bytes consumed (that bit will be useful
 for later when we deal with spans).
 
 ```rust
-fn take_while<F>(data: &[u8], mut pred: F) -> Result<(&str, usize)> 
+/// Consumes bytes while a predicate evaluates to true.
+fn take_while_raw<F>(data: &[u8], mut pred: F) -> Result<(&[u8], usize)>  
 where F: FnMut(char) -> bool
 {
     let mut index = 0;
@@ -104,9 +114,19 @@ where F: FnMut(char) -> bool
     if index == 0 {
         Err("No matches".into())
     } else {
-        let got = str::from_utf8(&data[..index])?;
-        Ok((got, index))
+        Ok((&data[..index], index))
     }
+}
+
+/// Consumes bytes while a predicate evaluates to true, then converts them
+/// to a string.
+fn take_while<F>(data: &[u8], pred: F) -> Result<(&str, usize)> 
+where F: FnMut(char) -> bool
+{
+    take_while_raw(data, pred).and_then(|(bytes, n)| {
+        let as_str = str::from_utf8(bytes)?;
+        Ok((as_str, n))
+    })
 }
 ```
 
@@ -118,6 +138,17 @@ the rest.
 
 ```rust
 macro_rules! lexer_test {
+    (FAIL: $name:ident, $func:ident, $src:expr) => {
+        #[cfg(test)]
+        #[test]
+        fn $name() {
+            let src: &str = $src;
+            let func: Tokenizer<_> = $func;
+
+            let got = func(src.as_bytes());
+            assert!(got.is_err(), "{:?} should be an error", got);
+        }
+    };
     ($name:ident, $func:ident, $src:expr => $should_be:expr) => {
         #[cfg(test)]
         #[test]
@@ -161,4 +192,46 @@ And to test it:
 lexer_test!(tokenize_a_single_digit_integer, tokenize_integer, "1" => 1);
 lexer_test!(tokenize_a_longer_integer, tokenize_integer, "1234567890" => 1234567890);
 lexer_test!(tokenizing_integers_consumes_only_up_to_dot, tokenize_integer, "12.34" => 12);
+```
+
+Lexing a decimal number is *almost* as easy as integers. In this case we the
+predicate needs to keep track of how many `.`'s it has seen, returning `false`
+the moment it sees more than one.
+
+
+```rust
+fn tokenize_decimal(data: &[u8]) -> Result<(Token, usize)> {
+    let mut seen_dot = false;
+
+    let (decimal, bytes_read) = take_while(data, |c| {
+        if c.is_digit(10) {
+            true
+        } else if c == '.' {
+            if !seen_dot {
+                seen_dot = true;
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    })?;
+
+    let n: f64 = decimal.parse()?;
+    Ok((Token::Decimal(n), bytes_read))
+}
+```
+
+Something interesting with this approach is that a literal like `12.4.789` 
+will be lexed as the decimal `12.4` followed by a `.789`, which is an invalid
+float.
+
+
+```rust
+lexer_test!(lex_integer_as_float, tokenize_decimal, "123" => 123.0);
+lexer_test!(tokenize_basic_decimal, tokenize_decimal, "12.3" => 12.3);
+lexer_test!(tokenize_string_with_multiple_decimal_points, tokenize_decimal, "12.3.456" => 12.3);
+lexer_test!(FAIL: cant_tokenize_a_string_as_a_decimal, tokenize_decimal, "asdfghj");
+lexer_test!(tokenizing_decimal_stops_at_alpha, tokenize_decimal, "123.4asdfghj" => 123.4);
 ```
