@@ -6,6 +6,11 @@ language. Because it's so much more interesting to use a programming language
 available in the wild, compared to some contrived example, we're going to 
 analyse Delphi (a Pascal variant).
 
+Believe it or not, but this entire book is the actual source code for this
+static analyser. Check out the [repo] on GitHub if you want to see more.
+
+[repo]: https://github.com/Michael-F-Bryan/static-analyser-in-rust
+
 Here's your basic Hello World:
 
 ```pascal
@@ -16,7 +21,8 @@ end;
 ```
 
 > **Note:** The API docs for this crate should be placed alongside the book.
-> You can access then [here](../doc/static_analyser/index.html).
+> You can access then [here](../doc/static_analyser/index.html) (you'll need
+> to use `cargo doc --open` if viewing locally).
 
 
 First up, lets import some crates we're going to need:

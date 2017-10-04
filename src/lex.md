@@ -1,3 +1,4 @@
+# Lexing
 # Lexical Analysis
 
 It's always nice to add doc-comments so rustdoc knows what this module does.
@@ -89,10 +90,13 @@ fn tokenize_ident(data: &str) -> Result<(Token, usize)> {
 
     let (got, bytes_read) = take_while(data, |ch| ch == '_' || ch.is_alphanumeric())?;
 
+    // TODO: Recognise keywords using a `match` statement here.
+
     let tok = Token::Identifier(got.to_string());
     Ok((tok, bytes_read))
 }
 ```
+
 
 As a general rule, our tokenizer functions will look like this
 
