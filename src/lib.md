@@ -48,19 +48,50 @@ tokenizing (often called *lexical analysis*).
 pub mod lex;
 ```
 
-Next is parsing (*semantic analysis*).
+Next we do the parsing stage (*semantic analysis*) to convert our stream of 
+tokens into an Abstract Syntax Tree. This is a representation of the program
+as it exists on disk. 
+
+A lot of static analysis passes can get away with working purely at the AST
+level. For example, if you want to make sure people don't accidentally divide
+by zero it's just a case of looking for all division nodes and checking that
+the right hand isn't a numeric literal representing zero (e.g. `0` or `0.0`).
+
+Another useful lint which can be applied at this level is 
+[cyclomatic complexity], i.e. how "complex" a function/procedure is. This is
+normally just a case of walking the body of a function and counting the number
+of branches, loops, and `try/catch` blocks encountered.
+
+[cyclomatic complexity]: https://en.wikipedia.org/wiki/Cyclomatic_complexity
 
 ```rust
 pub mod parse;
 ```
 
-The third step is type checking.
+The third step is type checking and generating a High level Intermediate 
+Representation (HIR), often referred to as "lowering" (converting from a high
+level representation to a lower one). 
+
+ While the AST is very flexible and useful, it works at the language syntax
+ level and completely misses the *semantics* of a language. This means an
+ expression like `'foo' + 42` or dereferencing a float is a perfectly valid
+ AST node.
+ 
+ To perform some of the more advanced analyses we'll need to have access to
+ the full context surrounding an expression to determine if it is valid. This
+ typically involves figuring out the type for each variable and expression,
+ as well as resolving imports and stitching multiple unit files into one
+ cohesive data structure.
 
 ```rust
-pub mod typeck;
+pub mod lowering;
 ```
 
-Now *finally* we've got everything set up to do the static analysis.
+Now we've *finally* resolved all imports and types we're *guaranteed* to have
+a syntactically and semantically valid program. This doesn't mean it's correct
+though! At this stage we can create passes which employ the full strength of
+the compiler/static analyser to check the *logic* of our program. This lets
+us do 
 
 ```rust
 pub mod analysis;

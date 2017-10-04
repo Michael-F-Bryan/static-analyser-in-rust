@@ -24,7 +24,6 @@ build-docs:
 
 clean:
 	cargo clean 
-	mdbook clean
 	git clean -f -x -d 
 
 word-count:

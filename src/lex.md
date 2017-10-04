@@ -1,4 +1,3 @@
-# Lexing
 # Lexical Analysis
 
 It's always nice to add doc-comments so rustdoc knows what this module does.
