@@ -79,10 +79,10 @@ To make things easy, we'll break tokenizing up into little functions which
 take some string slice (`&str`) and spit out either a token or an error.
 
 ```rust
-fn tokenize_ident(data: &[u8]) -> Result<(Token, usize)> {
+fn tokenize_ident(data: &str) -> Result<(Token, usize)> {
     // identifiers can't start with a number
-    match data.first() {
-        Some(ch) => if (*ch as char).is_digit(10) {
+    match data.chars().next() {
+        Some(ch) => if ch.is_digit(10) {
             bail!("Identifiers can't start with a number")
         }
         None => bail!(ErrorKind::UnexpectedEOF)
@@ -98,7 +98,7 @@ fn tokenize_ident(data: &[u8]) -> Result<(Token, usize)> {
 As a general rule, our tokenizer functions will look like this
 
 ```rust
-type Tokenizer<T> = fn(&[u8]) -> Result<(T, usize)>;
+type Tokenizer<T> = fn(&str) -> Result<(T, usize)>;
 ```
 
 The `take_while()` function is just a helper which will call a closure on each
@@ -111,36 +111,26 @@ for later when we deal with spans).
 
 ```rust
 /// Consumes bytes while a predicate evaluates to true.
-fn take_while_raw<F>(data: &[u8], mut pred: F) -> Result<(&[u8], usize)>  
+fn take_while<F>(data: &str, mut pred: F) -> Result<(&str, usize)>  
 where F: FnMut(char) -> bool
 {
-    let mut index = 0;
+    let mut current_index = 0;
 
-    while let Some(next) = data.get(index) {
-        let next = *next as char;
-        if pred(next) {
-            index = index + 1;
-        } else {
+    for ch in data.chars() {
+        let should_continue = pred(ch);
+
+        if !should_continue {
             break;
         }
+
+        current_index += ch.len_utf8();
     }
 
-    if index == 0 {
-        Err("No matches".into())
+    if current_index == 0 {
+        return Err("No Matches".into());
     } else {
-        Ok((&data[..index], index))
+        return Ok((&data[..current_index], current_index));
     }
-}
-
-/// Consumes bytes while a predicate evaluates to true, then converts them
-/// to a string.
-fn take_while<F>(data: &[u8], pred: F) -> Result<(&str, usize)> 
-where F: FnMut(char) -> bool
-{
-    take_while_raw(data, pred).and_then(|(bytes, n)| {
-        let as_str = str::from_utf8(bytes)?;
-        Ok((as_str, n))
-    })
 }
 ```
 
@@ -159,7 +149,7 @@ macro_rules! lexer_test {
             let src: &str = $src;
             let func: Tokenizer<_> = $func;
 
-            let got = func(src.as_bytes());
+            let got = func(src);
             assert!(got.is_err(), "{:?} should be an error", got);
         }
     };
@@ -171,7 +161,7 @@ macro_rules! lexer_test {
             let should_be = Token::from($should_be);
             let func: Tokenizer<_> = $func;
 
-            let (got, _bytes_read) = func(src.as_bytes()).unwrap();
+            let (got, _bytes_read) = func(src).unwrap();
             assert_eq!(got, should_be, "Input was {:?}", src);
         }
     };
@@ -200,7 +190,7 @@ has seen, returning `false` the moment it sees more than one.
 
 ```rust
 /// Tokenize a numeric literal.
-fn tokenize_number(data: &[u8]) -> Result<(Token, usize)> {
+fn tokenize_number(data: &str) -> Result<(Token, usize)> {
     let mut seen_dot = false;
 
     let (decimal, bytes_read) = take_while(data, |c| {
@@ -250,7 +240,7 @@ which are wrapped by a single `skip()`.
 Let's deal with whitespace first seeing as that's easiest.
 
 ```rust
-fn skip_whitespace(data: &[u8]) -> usize {
+fn skip_whitespace(data: &str) -> usize {
     match take_while(data, |ch| ch.is_whitespace()) {
         Ok((_, bytes_skipped)) => bytes_skipped,
         _ => 0,
@@ -259,10 +249,10 @@ fn skip_whitespace(data: &[u8]) -> usize {
 
 #[test]
 fn skip_past_several_whitespace_chars() {
-    let src = " \t\n\r";
-    let should_be = src.len();
+    let src = " \t\n\r123";
+    let should_be = 4;
 
-    let num_skipped = skip_whitespace(src.as_bytes());
+    let num_skipped = skip_whitespace(src);
     assert_eq!(num_skipped, should_be);
 }
 
@@ -271,7 +261,7 @@ fn skipping_whitespace_when_first_is_a_letter_returns_zero() {
     let src = "Hello World";
     let should_be = 0;
 
-    let num_skipped = skip_whitespace(src.as_bytes());
+    let num_skipped = skip_whitespace(src);
     assert_eq!(num_skipped, should_be);
 }
 ```
@@ -303,9 +293,9 @@ up until now.
 
 ```rust
 /// Try to lex a single token from the input stream.
-pub fn tokenize(data: &[u8]) -> Result<(Token, usize)> {
-    let next = match data.first() {
-        Some(c) => *c as char,
+pub fn tokenize_single_token(data: &str) -> Result<(Token, usize)> {
+    let next = match data.chars().next() {
+        Some(c) => c,
         None => bail!(ErrorKind::UnexpectedEOF),
     };
 
@@ -332,7 +322,7 @@ Now lets test it, in theory we should get identical results to the other tests
 written up til now.
 
 ```rust
-lexer_test!(central_tokenizer_ident, tokenize, "hello" => "hello");
-lexer_test!(central_tokenizer_integer, tokenize, "1234" => 1234);
-lexer_test!(central_tokenizer_decimal, tokenize, "123.4" => 123.4);
+lexer_test!(central_tokenizer_ident, tokenize_single_token, "hello" => "hello");
+lexer_test!(central_tokenizer_integer, tokenize_single_token, "1234" => 1234);
+lexer_test!(central_tokenizer_decimal, tokenize_single_token, "123.4" => 123.4);
 ```
