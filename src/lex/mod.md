@@ -26,15 +26,21 @@ pub enum Token {
     Decimal(f64),
     Identifier(String),
     QuotedString(String),
-    End,
-    Plus,
-    Minus,
     Asterisk,
-    Slash,
-    Dot,
+    At, 
+    Carat, 
+    CloseParen, 
+    CloseSquare, 
     Colon,
-    Semicolon,
+    Dot, 
+    End,
     Equals,
+    Minus, 
+    OpenParen, 
+    OpenSquare, 
+    Plus,
+    Semicolon,
+    Slash,
 }
 ```
 
@@ -74,7 +80,15 @@ take some string slice (`&str`) and spit out either a token or an error.
 
 ```rust
 fn tokenize_ident(data: &[u8]) -> Result<(Token, usize)> {
-    let (got, bytes_read) = take_while(data, |ch| ch.is_alphanumeric())?;
+    // identifiers can't start with a number
+    match data.first() {
+        Some(ch) => if (*ch as char).is_digit(10) {
+            bail!("Identifiers can't start with a number")
+        }
+        None => bail!(ErrorKind::UnexpectedEOF)
+    }
+
+    let (got, bytes_read) = take_while(data, |ch| ch == '_' || ch.is_alphanumeric())?;
 
     let tok = Token::Identifier(got.to_string());
     Ok((tok, bytes_read))
@@ -158,7 +172,7 @@ macro_rules! lexer_test {
             let func: Tokenizer<_> = $func;
 
             let (got, _bytes_read) = func(src.as_bytes()).unwrap();
-            assert_eq!(got, should_be);
+            assert_eq!(got, should_be, "Input was {:?}", src);
         }
     };
 }
@@ -169,38 +183,24 @@ Now a test to check tokenizing identifiers becomes trivial.
 ```rust
 lexer_test!(tokenize_a_single_letter, tokenize_ident, "F" => "F");
 lexer_test!(tokenize_an_identifer, tokenize_ident, "Foo" => "Foo");
+lexer_test!(tokenize_ident_containing_an_underscore, tokenize_ident, "Foo_bar" => "Foo_bar");
+lexer_test!(FAIL: tokenize_ident_cant_start_with_number, tokenize_ident, "7Foo_bar");
+lexer_test!(FAIL: tokenize_ident_cant_start_with_dot, tokenize_ident, ".Foo_bar");
 ```
 
 Note that the macro calls `into()` on the result for us. Because we've defined
 `From<&'a str>` for `Token`, we can use `"Foo"` as shorthand for the output.
 
-It's also fairly easy to tokenize integers. They're just a continuous string
-of digits.
-
-```rust
-fn tokenize_integer(data: &[u8]) -> Result<(Token, usize)> {
-    let (integer, bytes_read) = take_while(data, |c| c.is_digit(10))?;
-    let integer = integer.parse().expect("Already checked this is a number");
-
-    Ok((Token::Integer(integer), bytes_read))
-}
-```
-
-And to test it:
-
-```rust
-lexer_test!(tokenize_a_single_digit_integer, tokenize_integer, "1" => 1);
-lexer_test!(tokenize_a_longer_integer, tokenize_integer, "1234567890" => 1234567890);
-lexer_test!(tokenizing_integers_consumes_only_up_to_dot, tokenize_integer, "12.34" => 12);
-```
-
-Lexing a decimal number is *almost* as easy as integers. In this case we the
-predicate needs to keep track of how many `.`'s it has seen, returning `false`
-the moment it sees more than one.
+It'also fairly easy to tokenize integers, they're just a continuous string of
+digits. However if we also want to be able to deal with decimal numbers we
+need to accept something that *may* look like two integers separated by a
+dot. In this case we the predicate needs to keep track of how many `.`'s it
+has seen, returning `false` the moment it sees more than one.
 
 
 ```rust
-fn tokenize_decimal(data: &[u8]) -> Result<(Token, usize)> {
+/// Tokenize a numeric literal.
+fn tokenize_number(data: &[u8]) -> Result<(Token, usize)> {
     let mut seen_dot = false;
 
     let (decimal, bytes_read) = take_while(data, |c| {
@@ -218,8 +218,14 @@ fn tokenize_decimal(data: &[u8]) -> Result<(Token, usize)> {
         }
     })?;
 
-    let n: f64 = decimal.parse()?;
-    Ok((Token::Decimal(n), bytes_read))
+    if seen_dot {
+        let n: f64 = decimal.parse()?;
+        Ok((Token::Decimal(n), bytes_read))
+    } else {
+        let n: usize = decimal.parse()?;
+        Ok((Token::Integer(n), bytes_read))
+
+    }
 }
 ```
 
@@ -229,9 +235,104 @@ float.
 
 
 ```rust
-lexer_test!(lex_integer_as_float, tokenize_decimal, "123" => 123.0);
-lexer_test!(tokenize_basic_decimal, tokenize_decimal, "12.3" => 12.3);
-lexer_test!(tokenize_string_with_multiple_decimal_points, tokenize_decimal, "12.3.456" => 12.3);
-lexer_test!(FAIL: cant_tokenize_a_string_as_a_decimal, tokenize_decimal, "asdfghj");
-lexer_test!(tokenizing_decimal_stops_at_alpha, tokenize_decimal, "123.4asdfghj" => 123.4);
+lexer_test!(tokenize_a_single_digit_integer, tokenize_number, "1" => 1);
+lexer_test!(tokenize_a_longer_integer, tokenize_number, "1234567890" => 1234567890);
+lexer_test!(tokenize_basic_decimal, tokenize_number, "12.3" => 12.3);
+lexer_test!(tokenize_string_with_multiple_decimal_points, tokenize_number, "12.3.456" => 12.3);
+lexer_test!(FAIL: cant_tokenize_a_string_as_a_decimal, tokenize_number, "asdfghj");
+lexer_test!(tokenizing_decimal_stops_at_alpha, tokenize_number, "123.4asdfghj" => 123.4);
+```
+
+One last utility we're going to need is the ability to skip past whitespace 
+characters and comments. These will be implemented as two separate functions
+which are wrapped by a single `skip()`.
+
+Let's deal with whitespace first seeing as that's easiest.
+
+```rust
+fn skip_whitespace(data: &[u8]) -> usize {
+    match take_while(data, |ch| ch.is_whitespace()) {
+        Ok((_, bytes_skipped)) => bytes_skipped,
+        _ => 0,
+    }
+}
+
+#[test]
+fn skip_past_several_whitespace_chars() {
+    let src = " \t\n\r";
+    let should_be = src.len();
+
+    let num_skipped = skip_whitespace(src.as_bytes());
+    assert_eq!(num_skipped, should_be);
+}
+
+#[test]
+fn skipping_whitespace_when_first_is_a_letter_returns_zero() {
+    let src = "Hello World";
+    let should_be = 0;
+
+    let num_skipped = skip_whitespace(src.as_bytes());
+    assert_eq!(num_skipped, should_be);
+}
+```
+
+According to [the internets], a comment in Delphi can be written multiple ways.
+
+> **Commenting Code**
+> 
+> Delphi uses `//` for a single line comment and both `{}` and `(**)` for 
+> multiple line comments. Although you can nest different types of multiple 
+> line comments, it is recommended that you don't.
+> 
+> **Compiler Directives - `$`**
+>
+> A special comment. Delphi compiler directives are in the form of
+> `{$DIRECTIVE}`. Of interest for comments is using the `$IFDEF` compiler 
+> directive to remark out code.
+
+[the internets]: https://www.prestwoodboards.com/ASPSuite/KB/Document_View.asp?QID=101505
+
+
+## The Main Tokenizer Function
+
+To tie everything together, we'll use a method which matches the next
+character against various patterns in turn. This is essentially just a big
+`match` statement which defers to the small tokenizer functions we've built
+up until now.
+
+
+```rust
+/// Try to lex a single token from the input stream.
+pub fn tokenize(data: &[u8]) -> Result<(Token, usize)> {
+    let next = match data.first() {
+        Some(c) => *c as char,
+        None => bail!(ErrorKind::UnexpectedEOF),
+    };
+
+    match next {
+        '.' => Ok((Token::Dot, 1)),
+        '+' => Ok((Token::Plus, 1)),
+        '-' => Ok((Token::Minus, 1)),
+        '*' => Ok((Token::Asterisk, 1)),
+        '/' => Ok((Token::Slash, 1)),
+        '@' => Ok((Token::At, 1)),
+        '^' => Ok((Token::Carat, 1)),
+        '(' => Ok((Token::OpenParen, 1)),
+        ')' => Ok((Token::CloseParen, 1)),
+        '[' => Ok((Token::OpenSquare, 1)),
+        ']' => Ok((Token::CloseSquare, 1)),
+        '0' ... '9' => tokenize_number(data),
+        c @ '_' | c if c.is_alphabetic() => tokenize_ident(data),
+        other => bail!(ErrorKind::UnknownCharacter(other)),
+    }
+}
+```
+
+Now lets test it, in theory we should get identical results to the other tests
+written up til now.
+
+```rust
+lexer_test!(central_tokenizer_ident, tokenize, "hello" => "hello");
+lexer_test!(central_tokenizer_integer, tokenize, "1234" => 1234);
+lexer_test!(central_tokenizer_decimal, tokenize, "123.4" => 123.4);
 ```
