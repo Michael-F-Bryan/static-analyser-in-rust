@@ -10,6 +10,7 @@ Believe it or not, but this entire book is the actual source code for this
 static analyser. Check out the [repo] on GitHub if you want to see more.
 
 [repo]: https://github.com/Michael-F-Bryan/static-analyser-in-rust
+[tango]: https://github.com/pnkfelix/tango
 
 Here's your basic Hello World:
 
