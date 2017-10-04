@@ -34,7 +34,7 @@ need:
 //! This is written using a *Literate Programming* style, so you may find it
 //! easier to inspect the [rendered version] instead.
 //!
-//! [rendered]: https://michael-f-bryan.github.io/static-analyser-in-rust/
+//! [rendered version]: https://michael-f-bryan.github.io/static-analyser-in-rust/
 
 #[macro_use]
 extern crate error_chain;
