@@ -25,9 +25,17 @@ end;
 > to use `cargo doc --open` if viewing locally).
 
 
-First up, lets import some crates we're going to need:
+First up, lets add some top-level docs and import some crates we're going to 
+need:
 
 ```rust
+//! A parser and static analysis library for exploring Delphi code.
+//!
+//! This is written using a *Literate Programming* style, so you may find it
+//! easier to inspect the [rendered version] instead.
+//!
+//! [rendered]: https://michael-f-bryan.github.io/static-analyser-in-rust/
+
 #[macro_use]
 extern crate error_chain;
 ```
