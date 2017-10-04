@@ -82,10 +82,9 @@ take some string slice (`&str`) and spit out either a token or an error.
 fn tokenize_ident(data: &str) -> Result<(Token, usize)> {
     // identifiers can't start with a number
     match data.chars().next() {
-        Some(ch) => if ch.is_digit(10) {
-            bail!("Identifiers can't start with a number")
-        }
-        None => bail!(ErrorKind::UnexpectedEOF)
+        Some(ch) if ch.is_digit(10) => bail!("Identifiers can't start with a number"),
+        None => bail!(ErrorKind::UnexpectedEOF),
+        _ => {},
     }
 
     let (got, bytes_read) = take_while(data, |ch| ch == '_' || ch.is_alphanumeric())?;
@@ -325,4 +324,15 @@ written up til now.
 lexer_test!(central_tokenizer_ident, tokenize_single_token, "hello" => "hello");
 lexer_test!(central_tokenizer_integer, tokenize_single_token, "1234" => 1234);
 lexer_test!(central_tokenizer_decimal, tokenize_single_token, "123.4" => 123.4);
+lexer_test!(central_tokenizer_dot, tokenize_single_token, "." => Token::Dot);
+lexer_test!(central_tokenizer_plus, tokenize_single_token, "+" => Token::Plus);
+lexer_test!(central_tokenizer_minus, tokenize_single_token, "-" => Token::Minus);
+lexer_test!(central_tokenizer_asterisk, tokenize_single_token, "*" => Token::Asterisk);
+lexer_test!(central_tokenizer_slash, tokenize_single_token, "/" => Token::Slash);
+lexer_test!(central_tokenizer_at, tokenize_single_token, "@" => Token::At);
+lexer_test!(central_tokenizer_carat, tokenize_single_token, "^" => Token::Carat);
+lexer_test!(central_tokenizer_open_paren, tokenize_single_token, "(" => Token::OpenParen);
+lexer_test!(central_tokenizer_close_paren, tokenize_single_token, ")" => Token::CloseParen);
+lexer_test!(central_tokenizer_open_square, tokenize_single_token, "[" => Token::OpenSquare);
+lexer_test!(central_tokenizer_close_square, tokenize_single_token, "]" => Token::CloseSquare);
 ```
