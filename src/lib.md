@@ -122,6 +122,14 @@ steps where we want to indicate where an error occurred to the user.
 pub mod codemap;
 ```
 
+Finally, there's the `Driver`. He's in charge of the show an is usually the
+thing you'll want to invoke or hook into to tweak the analysis process.
+
+```rust
+mod driver;
+pub use driver::Driver;
+```
+
 
 ## A Note on Project Design
 

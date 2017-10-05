@@ -27,4 +27,7 @@ clean:
 	git clean -f -x -d 
 
 word-count:
-	-@ wc --words $$(find src/ -name "*.md")
+	-@ echo -e "lines words file"
+	-@ echo -e "----- ----- ----"
+	-@ wc --lines --words $$(find src/ -name "*.md")
+

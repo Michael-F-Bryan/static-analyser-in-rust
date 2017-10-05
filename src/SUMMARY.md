@@ -8,6 +8,7 @@
 - [Parsing](./parse.md)
 - [Type Checking and Lowering](./lowering.md)
 - [Static Analysis](./analysis.md)
+- [The Driver](./driver.md)
 
 ---
 

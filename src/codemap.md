@@ -74,10 +74,10 @@ impl CodeMap {
             name: filename.into(),
             contents: contents.into(),
             items: RefCell::new(HashMap::new()),
-            next_id: self.next_id.clone(),
+            next_id: Rc::clone(&self.next_id),
         };
         let fm = Rc::new(filemap);
-        self.files.push(fm.clone());
+        self.files.push(Rc::clone(&fm));
 
         fm
     }
@@ -91,12 +91,18 @@ impl CodeMap {
         }
 
         panic!("Tried to lookup {:?} but it wasn't in any \
-            of the FileMaps... This is a bug!")
+            of the FileMaps... This is a bug!", span)
     }
 
     /// The files that this `CodeMap` contains.
     pub fn files(&self) -> &[Rc<FileMap>] {
         self.files.as_slice()
+    }
+}
+
+impl Default for CodeMap {
+    fn default() -> CodeMap {
+        CodeMap::new()
     }
 }
 ```

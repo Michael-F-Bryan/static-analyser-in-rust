@@ -128,9 +128,9 @@ where F: FnMut(char) -> bool
     }
 
     if current_index == 0 {
-        return Err("No Matches".into());
+        Err("No Matches".into())
     } else {
-        return Ok((&data[..current_index], current_index));
+        Ok((&data[..current_index], current_index))
     }
 }
 ```
@@ -427,14 +427,14 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn next(&mut self) -> Result<Option<(TokenKind, usize, usize)>> {
+    fn next_token(&mut self) -> Result<Option<(TokenKind, usize, usize)>> {
         self.skip_whitespace();
 
         if self.remaining_text.is_empty() {
             Ok(None)
         } else {
             let start = self.current_index;
-            let tok = self.next_token()
+            let tok = self._next_token()
                 .chain_err(|| ErrorKind::MessageWithLocation(self.current_index,
                     "Couldn't read the next token"))?;
             let end = self.current_index;
@@ -447,7 +447,7 @@ impl<'a> Tokenizer<'a> {
         self.chomp(skipped);
     }
 
-    fn next_token(&mut self) -> Result<TokenKind> {
+    fn _next_token(&mut self) -> Result<TokenKind> {
         let (tok, bytes_read) = tokenize_single_token(self.remaining_text)?;
         self.chomp(bytes_read);
 
@@ -469,7 +469,7 @@ pub fn tokenize(src: &str) -> Result<Vec<(TokenKind, usize, usize)>> {
     let mut tokenizer = Tokenizer::new(src);
     let mut tokens = Vec::new();
 
-    while let Some(tok) = tokenizer.next()? {
+    while let Some(tok) = tokenizer.next_token()? {
         tokens.push(tok);
     }
 
