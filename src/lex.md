@@ -10,20 +10,23 @@ Before anything else, lets import some things we'll require.
 
 ```rust
 use std::str;
-use std::ops::{Deref, DerefMut};
-use std::fmt::Debug;
+use codemap::Span;
 use errors::*;
 ```
 
-A lexer's job is to turn normal strings (which a human can read) into 
-something more computer-friendly called a `Token`. A `Token` can be multiple
-different types representing multiple different things, so it makes sense to 
-use a Rust enum here.
+A lexer's job is to turn normal strings (which a human can read) into
+something more computer-friendly called a `Token`. In this crate, a `Token`
+will be comprised of a `Span` (more about that [later]), and a `TokenKind`
+which lets us know which type of token we are dealing with. A `TokenKind` can
+be multiple different types representing multiple different things, so it
+makes sense to use a Rust enum here.
+
+[later]: ./codemap.html
 
 ```rust
 /// Any valid token in the Delphi programming language.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Token {
+pub enum TokenKind {
     Integer(usize),
     Decimal(f64),
     Identifier(String),
@@ -49,27 +52,27 @@ pub enum Token {
 We'll also want to implement some helpers to make conversion more ergonomic.
 
 ```rust
-impl From<String> for Token {
-    fn from(other: String) -> Token {
-        Token::Identifier(other)
+impl From<String> for TokenKind {
+    fn from(other: String) -> TokenKind {
+        TokenKind::Identifier(other)
     }
 }
 
-impl<'a> From<&'a str> for Token {
-    fn from(other: &'a str) -> Token {
-        Token::Identifier(other.to_string())
+impl<'a> From<&'a str> for TokenKind {
+    fn from(other: &'a str) -> TokenKind {
+        TokenKind::Identifier(other.to_string())
     }
 }
 
-impl From<usize> for Token {
-    fn from(other: usize) -> Token {
-        Token::Integer(other)
+impl From<usize> for TokenKind {
+    fn from(other: usize) -> TokenKind {
+        TokenKind::Integer(other)
     }
 }
 
-impl From<f64> for Token {
-    fn from(other: f64) -> Token {
-        Token::Decimal(other)
+impl From<f64> for TokenKind {
+    fn from(other: f64) -> TokenKind {
+        TokenKind::Decimal(other)
     }
 }
 ```
@@ -81,7 +84,7 @@ To make things easy, we'll break tokenizing up into little functions which
 take some string slice (`&str`) and spit out either a token or an error.
 
 ```rust
-fn tokenize_ident(data: &str) -> Result<(Token, usize)> {
+fn tokenize_ident(data: &str) -> Result<(TokenKind, usize)> {
     // identifiers can't start with a number
     match data.chars().next() {
         Some(ch) if ch.is_digit(10) => bail!("Identifiers can't start with a number"),
@@ -93,7 +96,7 @@ fn tokenize_ident(data: &str) -> Result<(Token, usize)> {
 
     // TODO: Recognise keywords using a `match` statement here.
 
-    let tok = Token::Identifier(got.to_string());
+    let tok = TokenKind::Identifier(got.to_string());
     Ok((tok, bytes_read))
 }
 ```
@@ -155,7 +158,7 @@ macro_rules! lexer_test {
         #[test]
         fn $name() {
             let src: &str = $src;
-            let should_be = Token::from($should_be);
+            let should_be = TokenKind::from($should_be);
             let func = $func;
 
             let (got, _bytes_read) = func(src).unwrap();
@@ -176,7 +179,7 @@ lexer_test!(FAIL: tokenize_ident_cant_start_with_dot, tokenize_ident, ".Foo_bar"
 ```
 
 Note that the macro calls `into()` on the result for us. Because we've defined
-`From<&'a str>` for `Token`, we can use `"Foo"` as shorthand for the output.
+`From<&'a str>` for `TokenKind`, we can use `"Foo"` as shorthand for the output.
 
 It'also fairly easy to tokenize integers, they're just a continuous string of
 digits. However if we also want to be able to deal with decimal numbers we
@@ -187,7 +190,7 @@ has seen, returning `false` the moment it sees more than one.
 
 ```rust
 /// Tokenize a numeric literal.
-fn tokenize_number(data: &str) -> Result<(Token, usize)> {
+fn tokenize_number(data: &str) -> Result<(TokenKind, usize)> {
     let mut seen_dot = false;
 
     let (decimal, bytes_read) = take_while(data, |c| {
@@ -207,10 +210,10 @@ fn tokenize_number(data: &str) -> Result<(Token, usize)> {
 
     if seen_dot {
         let n: f64 = decimal.parse()?;
-        Ok((Token::Decimal(n), bytes_read))
+        Ok((TokenKind::Decimal(n), bytes_read))
     } else {
         let n: usize = decimal.parse()?;
-        Ok((Token::Integer(n), bytes_read))
+        Ok((TokenKind::Integer(n), bytes_read))
 
     }
 }
@@ -352,25 +355,25 @@ up until now.
 
 ```rust
 /// Try to lex a single token from the input stream.
-pub fn tokenize_single_token(data: &str) -> Result<(Token, usize)> {
+pub fn tokenize_single_token(data: &str) -> Result<(TokenKind, usize)> {
     let next = match data.chars().next() {
         Some(c) => c,
         None => bail!(ErrorKind::UnexpectedEOF),
     };
 
     let (tok, length) = match next {
-        '.' => (Token::Dot, 1),
-        '=' => (Token::Equals, 1),
-        '+' => (Token::Plus, 1),
-        '-' => (Token::Minus, 1),
-        '*' => (Token::Asterisk, 1),
-        '/' => (Token::Slash, 1),
-        '@' => (Token::At, 1),
-        '^' => (Token::Carat, 1),
-        '(' => (Token::OpenParen, 1),
-        ')' => (Token::CloseParen, 1),
-        '[' => (Token::OpenSquare, 1),
-        ']' => (Token::CloseSquare, 1),
+        '.' => (TokenKind::Dot, 1),
+        '=' => (TokenKind::Equals, 1),
+        '+' => (TokenKind::Plus, 1),
+        '-' => (TokenKind::Minus, 1),
+        '*' => (TokenKind::Asterisk, 1),
+        '/' => (TokenKind::Slash, 1),
+        '@' => (TokenKind::At, 1),
+        '^' => (TokenKind::Carat, 1),
+        '(' => (TokenKind::OpenParen, 1),
+        ')' => (TokenKind::CloseParen, 1),
+        '[' => (TokenKind::OpenSquare, 1),
+        ']' => (TokenKind::CloseSquare, 1),
         '0' ... '9' => tokenize_number(data).chain_err(|| "Couldn't tokenize a number")?,
         c @ '_' | c if c.is_alphabetic() => tokenize_ident(data)
             .chain_err(|| "Couldn't tokenize an identifier")?,
@@ -387,68 +390,22 @@ written up til now.
 ```rust lexer_test!(central_tokenizer_ident, tokenize_single_token, "hello" => "hello");
 lexer_test!(central_tokenizer_integer, tokenize_single_token, "1234" => 1234);
 lexer_test!(central_tokenizer_decimal, tokenize_single_token, "123.4" => 123.4);
-lexer_test!(central_tokenizer_dot, tokenize_single_token, "." => Token::Dot);
-lexer_test!(central_tokenizer_plus, tokenize_single_token, "+" => Token::Plus);
-lexer_test!(central_tokenizer_minus, tokenize_single_token, "-" => Token::Minus);
-lexer_test!(central_tokenizer_asterisk, tokenize_single_token, "*" => Token::Asterisk);
-lexer_test!(central_tokenizer_slash, tokenize_single_token, "/" => Token::Slash);
-lexer_test!(central_tokenizer_at, tokenize_single_token, "@" => Token::At);
-lexer_test!(central_tokenizer_carat, tokenize_single_token, "^" => Token::Carat);
-lexer_test!(central_tokenizer_equals, tokenize_single_token, "=" => Token::Equals);
-lexer_test!(central_tokenizer_open_paren, tokenize_single_token, "(" => Token::OpenParen);
-lexer_test!(central_tokenizer_close_paren, tokenize_single_token, ")" => Token::CloseParen);
-lexer_test!(central_tokenizer_open_square, tokenize_single_token, "[" => Token::OpenSquare);
-lexer_test!(central_tokenizer_close_square, tokenize_single_token, "]" => Token::CloseSquare);
+lexer_test!(central_tokenizer_dot, tokenize_single_token, "." => TokenKind::Dot);
+lexer_test!(central_tokenizer_plus, tokenize_single_token, "+" => TokenKind::Plus);
+lexer_test!(central_tokenizer_minus, tokenize_single_token, "-" => TokenKind::Minus);
+lexer_test!(central_tokenizer_asterisk, tokenize_single_token, "*" => TokenKind::Asterisk);
+lexer_test!(central_tokenizer_slash, tokenize_single_token, "/" => TokenKind::Slash);
+lexer_test!(central_tokenizer_at, tokenize_single_token, "@" => TokenKind::At);
+lexer_test!(central_tokenizer_carat, tokenize_single_token, "^" => TokenKind::Carat);
+lexer_test!(central_tokenizer_equals, tokenize_single_token, "=" => TokenKind::Equals);
+lexer_test!(central_tokenizer_open_paren, tokenize_single_token, "(" => TokenKind::OpenParen);
+lexer_test!(central_tokenizer_close_paren, tokenize_single_token, ")" => TokenKind::CloseParen);
+lexer_test!(central_tokenizer_open_square, tokenize_single_token, "[" => TokenKind::OpenSquare);
+lexer_test!(central_tokenizer_close_square, tokenize_single_token, "]" => TokenKind::CloseSquare);
 ```
 
 
 ## Tying It All Together
-
-Now that we can recognize individual Delphi tokens, we can wrap it in a loop 
-to tokenize an entire source file. To make life easier later on (mostly to do
-with reporting useful errors), we're going to return a `Spanned<Token>` which
-has some information attached to indicate where the token came from.
-
-```rust
-// TODO: Refactor this to use a `CodeMap` and span IDs for multiple file support
-
-/// A wrapper around some `T` which attaches span information.
-#[derive(Debug, PartialEq)]
-pub struct Spanned<T: Debug + PartialEq> {
-    pub inner: T,
-    pub start: usize,
-    pub end: usize,
-}
-```
-
-This spanned token is just a smart wrapper, therefore we're going to add a 
-couple methods to it to make inspecting the inner type easier.
-
-```rust
-impl<T: Debug + PartialEq> Deref for Spanned<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<T: Debug + PartialEq> DerefMut for Spanned<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-impl<T: Debug + PartialEq> Spanned<T> {
-    pub fn new<I: Into<T>>(inner: I, start: usize, end: usize) -> Self {
-        let inner = inner.into();
-        Spanned { inner, start, end }
-    }
-
-    pub fn into_inner(self) -> T {
-        self.inner
-    }
-}
-```
 
 Now we can write the overall tokenizer function. However, because this process
 involves a lot of state, it'll be easier to encapsulate everything in its own
@@ -469,7 +426,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn next(&mut self) -> Result<Option<Spanned<Token>>> {
+    fn next(&mut self) -> Result<Option<(TokenKind, usize, usize)>> {
         self.skip_whitespace();
 
         if self.remaining_text.is_empty() {
@@ -480,8 +437,7 @@ impl<'a> Tokenizer<'a> {
                 .chain_err(|| ErrorKind::MessageWithLocation(self.current_index,
                     "Couldn't read the next token"))?;
             let end = self.current_index;
-            let spanned = Spanned::new(tok, start, end);
-            Ok(Some(spanned))
+            Ok(Some((tok, start, end)))
         }
     }
 
@@ -490,7 +446,7 @@ impl<'a> Tokenizer<'a> {
         self.chomp(skipped);
     }
 
-    fn next_token(&mut self) -> Result<Token> {
+    fn next_token(&mut self) -> Result<TokenKind> {
         let (tok, bytes_read) = tokenize_single_token(self.remaining_text)?;
         self.chomp(bytes_read);
 
@@ -503,7 +459,7 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
-pub fn tokenize(src: &str) -> Result<Vec<Spanned<Token>>> {
+pub fn tokenize(src: &str) -> Result<Vec<(TokenKind, usize, usize)>> {
     let mut tokenizer = Tokenizer::new(src);
     let mut tokens = Vec::new();
 
@@ -518,7 +474,7 @@ pub fn tokenize(src: &str) -> Result<Vec<Spanned<Token>>> {
 Because we also want to make sure the location of tokens are correct, testing 
 this will be a little more involved. We essentially need to write up some
 (valid) Delphi code, manually inspect it, then make sure we get back *exactly*
-what we expect.
+what we expect. Byte indices and all.
 
 ```rust
 #[cfg(test)]
@@ -526,11 +482,11 @@ what we expect.
 fn tokenize_a_basic_expression() {
     let src = "foo = 1 + 2.34";
     let should_be = vec![
-        Spanned::new("foo", 0, 3),
-        Spanned::new(Token::Equals, 4, 5),
-        Spanned::new(1, 6, 7),
-        Spanned::new(Token::Plus, 8, 9),
-        Spanned::new(2.34, 10, 14),
+        (TokenKind::from("foo"), 0, 3),
+        (TokenKind::Equals, 4, 5),
+        (TokenKind::from(1), 6, 7),
+        (TokenKind::Plus, 8, 9),
+        (TokenKind::from(2.34), 10, 14),
     ];
 
     let got = tokenize(src).unwrap();
@@ -547,6 +503,39 @@ fn tokenizer_detects_invalid_stuff() {
     match err.kind() {
         &ErrorKind::MessageWithLocation(loc, _) => assert_eq!(loc, index_of_backtick),
         other => panic!("Unexpected error: {}", other),
+    }
+}
+```
+
+You'll probably notice that we're returning a `TokenKind` and a pair of integers
+inside a tuple, which isn't overly idiomatic. Idiomatic Rust would bundle 
+these up into a more strongly typed tuple of `TokenKind` and `Span`, where a span
+corresponds to the start and end indices of the token. 
+
+The reason we do things slightly strangly is that we're using a `CodeMap` to
+manage all these `Span`s, so when the caller calls the `tokenize()` function
+it's their responsibility to insert these token locations into a `CodeMap`.
+By returning a plain tuple of integers it means we can defer dealing with the
+`CodeMap` until later on. Vastly simplifying the tokenizing code.
+
+For completeness though, here is the `Token` people will be using. We haven't
+created any in this module, but it makes sense for its definition to be here.
+
+```rust
+/// A valid Delphi source code token.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Token {
+    /// The token's location relative to the rest of the files being 
+    /// processed.
+    pub span: Span,
+    /// What kind of token is this?
+    pub kind: TokenKind,
+}
+
+impl Token {
+    pub fn new<K: Into<TokenKind>>(span: Span, kind: K) -> Token {
+        let kind = kind.into();
+        Token { span, kind }
     }
 }
 ```

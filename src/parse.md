@@ -10,6 +10,9 @@ computer-friendly representation for the program. This representation is
 often called an *Abstract Syntax Tree* because it's a high-level tree
 datastructure which reflects a program's syntax.
 
+
+## The General Idea
+
 Before we start with parsing, lets look at an example chunk of Delphi code
 to get a feel for the language. A *unit file* is the basic building block of a
 Delphi program, analogous to a `*.c` file. The `Main()` function is typically
