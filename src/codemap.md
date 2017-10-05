@@ -90,7 +90,8 @@ impl CodeMap {
             }
         }
 
-        panic!("Tried to lookup {:?} but it wasn't in any of the FileMaps... This is a bug!")
+        panic!("Tried to lookup {:?} but it wasn't in any \
+            of the FileMaps... This is a bug!")
     }
 }
 ```
@@ -129,7 +130,7 @@ impl FileMap {
         match self.contents.get(range.clone()) {
             Some(substr) => Some(substr),
             None => panic!("FileMap thinks it contains {:?}, \
-            but the range ({:?}) doesn't point to anything valid!", span, range),
+                but the range ({:?}) doesn't point to anything valid!", span, range),
         }
     }
 
