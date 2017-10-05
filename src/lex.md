@@ -277,7 +277,48 @@ According to [the internets], a comment in Delphi can be written multiple ways.
 > `{$DIRECTIVE}`. Of interest for comments is using the `$IFDEF` compiler 
 > directive to remark out code.
 
-[the internets]: https://www.prestwoodboards.com/ASPSuite/KB/Document_View.asp?QID=101505
+[the internets]: https://wwgetw.prestwoodboards.com/ASPSuite/KB/Document_View.asp?QID=101505
+
+```rust
+fn skip_comments(src: &str) -> usize {
+    let pairs = [("//", "\n"), ("{", "}"), ("(*", "*)")];
+
+    for &(pattern, matcher) in &pairs {
+        if src.starts_with(pattern) {
+            let leftovers = skip_until(src, matcher);
+            return src.len() - leftovers.len();
+        }
+    }
+
+    0
+}
+
+fn skip_until<'a>(mut src: &'a str, pattern: &str) -> &'a str {
+    while !src.is_empty() && !src.starts_with(pattern) {
+        let next_char_size = src.chars().next().expect("The string isn't empty").len_utf8();
+        src = &src[next_char_size..];
+    }
+
+    &src[pattern.len()..]
+}
+
+macro_rules! comment_test {
+    ($name:ident, $src:expr => $should_be:expr) => {
+        #[cfg(test)]
+        #[test]
+        fn $name() {
+            let got = skip_comments($src);
+            assert_eq!(got, $should_be);
+        }
+    }
+}
+
+comment_test!(slash_slash_skips_to_end_of_line, "// foo bar { baz }\n 1234" => 19);
+comment_test!(comment_skip_curly_braces, "{ baz \n 1234} hello wor\nld" => 13);
+comment_test!(comment_skip_round_brackets, "(* Hello World *) asd" => 17);
+comment_test!(comment_skip_ignores_alphanumeric, "123 hello world" => 0);
+comment_test!(comment_skip_ignores_whitespace, "   (* *) 123 hello world" => 0);
+```
 
 Lastly, we group the whitespace and comment skipping together seeing as they
 both do the job of skipping characters we don't care about.
@@ -290,7 +331,7 @@ fn skip(src: &str) -> usize {
     loop {
         let ws = skip_whitespace(remaining);
         remaining = &remaining[ws..];
-        let comments = skip_whitespace(remaining);
+        let comments = skip_comments(remaining);
         remaining = &remaining[comments..];
 
         if ws + comments == 0 {
@@ -369,6 +410,9 @@ with reporting useful errors), we're going to return a `Spanned<Token>` which
 has some information attached to indicate where the token came from.
 
 ```rust
+// TODO: Refactor this to use a `CodeMap` and span IDs for multiple file support
+
+/// A wrapper around some `T` which attaches span information.
 #[derive(Debug, PartialEq)]
 pub struct Spanned<T: Debug + PartialEq> {
     pub inner: T,
