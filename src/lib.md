@@ -21,6 +21,9 @@ begin
 end;
 ```
 
+All you need to do is use the IDE to hook that function up to be run whenever
+a button is clicked and it'll show a "Hello World!" dialog.
+
 > **Note:** The API docs for this crate should be placed alongside the book.
 > You can access then [here](../doc/static_analyser/index.html) (you'll need
 > to use `cargo doc --open` if viewing locally).

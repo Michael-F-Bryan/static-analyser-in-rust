@@ -76,3 +76,7 @@ vars        = "var" var_decl*;
 ```
 
 With the terminals (`WORD`, `SEMICOLON`, and friends) being their usual selves.
+
+Delphi has a pretty simple syntax, so we're going to use a standard recursive
+descent parser. This is just an object which has a method roughly corresponding 
+to each rule in the language's grammar.

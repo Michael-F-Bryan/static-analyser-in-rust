@@ -38,7 +38,7 @@ that content.
 /// A mapping of `Span`s to the files in which they are located.
 #[derive(Debug)]
 pub struct CodeMap {
-    counter: Rc<AtomicUsize>,
+    next_id: Rc<AtomicUsize>,
     files: Vec<Rc<FileMap>>,
 }
 
@@ -48,7 +48,7 @@ pub struct CodeMap {
 pub struct FileMap {
     name: String,
     contents: String,
-    counter: Rc<AtomicUsize>,
+    next_id: Rc<AtomicUsize>,
     items: RefCell<HashMap<Span, Range<usize>>>
 }
 ```
@@ -60,9 +60,9 @@ string corresponding to a span.
 impl CodeMap {
     /// Create a new, empty `CodeMap`.
     pub fn new() -> CodeMap {
-        let counter = Rc::new(AtomicUsize::new(0));
+        let next_id = Rc::new(AtomicUsize::new(0));
         let files = Vec::new();
-        CodeMap { counter, files }
+        CodeMap { next_id, files }
     }
 
     /// Add a new file to the `CodeMap` and get back a reference to it.
@@ -74,7 +74,7 @@ impl CodeMap {
             name: filename.into(),
             contents: contents.into(),
             items: RefCell::new(HashMap::new()),
-            counter: self.counter.clone(),
+            next_id: self.next_id.clone(),
         };
         let fm = Rc::new(filemap);
         self.files.push(fm.clone());
@@ -170,11 +170,104 @@ impl FileMap {
             "End lies outside the content string");
 
         let range = start..end;
-        let span_id = self.counter.fetch_add(1, Ordering::Relaxed);
+
+        if let Some(existing) = self.reverse_lookup(&range) {
+            return existing;
+        }
+
+        let span_id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let span = Span(span_id);
 
         self.items.borrow_mut().insert(span, range);
         span
+    }
+
+    /// We don't want to go and add duplicate spans unnecessarily so we 
+    /// iterate through all existing ranges to see if this one already
+    /// exists. 
+    fn reverse_lookup(&self, needle: &Range<usize>) -> Option<Span> {
+        self.items.borrow()
+            .iter()
+            .find(|&(_, range)| range == needle)
+            .map(|(span, _)| span)
+            .cloned()
+    }
+}
+```
+
+To test that our `CodeMap` and `FileMap` behave as we expect them to, let's
+create some dummy "files" and try to create spans in them.
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn insert_a_file_into_a_codemap() {
+        let mut map = CodeMap::new();
+        let filename = "foo.rs";
+        let content = "Hello World!";
+
+        assert_eq!(map.files.len(), 0);
+        let fm = map.insert_file(filename, content);
+
+        assert_eq!(fm.filename(), filename);
+        assert_eq!(fm.contents(), content);
+        assert_eq!(map.files.len(), 1);
+    }
+
+    #[test]
+    fn get_span_for_substring() {
+        let mut map = CodeMap::new();
+        let src = "Hello World!";
+        let fm = map.insert_file("foo.rs", src);
+
+        let start = 2;
+        let end = 5;
+        let should_be = &src[start..end];
+
+        let span = fm.insert_span(start, end);
+        let got = fm.lookup(span).unwrap();
+        assert_eq!(got, should_be);
+        assert_eq!(fm.range_of(span).unwrap(), start..end);
+
+        let got_from_codemap = map.lookup(span);
+        assert_eq!(got_from_codemap, should_be);
+    }
+
+    #[test]
+    fn spans_for_different_ranges_are_always_unique() {
+        let mut map = CodeMap::new();
+        let src = "Hello World!";
+        let fm = map.insert_file("foo.rs", src);
+
+        let mut spans = Vec::new();
+
+        for start in 0..src.len() {
+            for end in start..src.len() {
+                let span = fm.insert_span(start, end);
+                assert!(!spans.contains(&span), 
+                    "{:?} already contains {:?} ({}..{})", 
+                    spans, span, start, end);
+                spans.push(span);
+            }
+        }
+    }
+
+    #[test]
+    fn spans_for_identical_ranges_are_identical() {
+        let mut map = CodeMap::new();
+        let src = "Hello World!";
+        let fm = map.insert_file("foo.rs", src);
+
+        let start = 0;
+        let end = 5;
+
+        let span_1 = fm.insert_span(start, end);
+        let span_2 = fm.insert_span(start, end);
+
+        assert_eq!(span_1, span_2);
     }
 }
 ```
