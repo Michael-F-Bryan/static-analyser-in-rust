@@ -7,6 +7,7 @@ usage:
 	-@ echo "    build        Build both the crate and accompanying book"
 	-@ echo "    word-count   Get some (rough) statistics about the repository"
 	-@ echo "    clean        Remove any unnecessary files and build artefacts"
+	-@ echo "    todo         Find all sections marked TODO or FIXME"
 	-@ echo "    usage        Print this help text"
 
 open: build
@@ -30,4 +31,7 @@ word-count:
 	-@ echo -e "lines words file"
 	-@ echo -e "----- ----- ----"
 	-@ wc --lines --words $$(find src/ -name "*.md")
+
+todo:
+	rg 'TODO|FIXME' --iglob '*.md'
 

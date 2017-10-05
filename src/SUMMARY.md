@@ -5,7 +5,9 @@
 ---
 
 - [Lexing](./lex.md)
-- [Parsing](./parse.md)
+- [Parsing](./parse/mod.md)
+    - [The Parser](./parse/parser.md)
+    - [The Abstract Syntax Tree](./parse/ast.md)
 - [Type Checking and Lowering](./lowering.md)
 - [Static Analysis](./analysis.md)
 - [The Driver](./driver.md)

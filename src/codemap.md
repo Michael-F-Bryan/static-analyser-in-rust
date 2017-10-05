@@ -28,6 +28,13 @@ result in a panic if you are lucky, or silently give you garbage.
 /// in a `CodeMap` or `FileMap`. 
 #[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
 pub struct Span(usize);
+
+impl Span {
+    /// Returns the special "dummy" span, which matches anything.
+    pub fn dummy() -> Span {
+        Span(0)
+    }
+}
 ```
 
 For our purposes, the `CodeMap` will just contain a list of `FileMap`s. These
@@ -60,7 +67,7 @@ string corresponding to a span.
 impl CodeMap {
     /// Create a new, empty `CodeMap`.
     pub fn new() -> CodeMap {
-        let next_id = Rc::new(AtomicUsize::new(0));
+        let next_id = Rc::new(AtomicUsize::new(1));
         let files = Vec::new();
         CodeMap { next_id, files }
     }
@@ -261,6 +268,7 @@ mod tests {
                 assert!(!spans.contains(&span), 
                     "{:?} already contains {:?} ({}..{})", 
                     spans, span, start, end);
+                assert_ne!(span, Span::dummy());
                 spans.push(span);
             }
         }

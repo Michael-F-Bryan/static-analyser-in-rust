@@ -267,6 +267,8 @@ fn skipping_whitespace_when_first_is_a_letter_returns_zero() {
 }
 ```
 
+> **TODO:** Tokenize string literals
+
 According to [the internets], a comment in Delphi can be written multiple ways.
 
 > **Commenting Code**
