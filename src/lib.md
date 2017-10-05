@@ -1,6 +1,6 @@
 # Writing a Static Analyser in Rust
 
-To try out the concept of *Literate Programming* (using the awesome [tango] 
+To try out the concept of [*Literate Programming*][lp] (using the awesome [tango] 
 crate), I'm going to write a small static analyser for a basic Programming 
 language. Because it's so much more interesting to use a programming language
 available in the wild, compared to some contrived example, we're going to 
@@ -11,6 +11,7 @@ static analyser. Check out the [repo] on GitHub if you want to see more.
 
 [repo]: https://github.com/Michael-F-Bryan/static-analyser-in-rust
 [tango]: https://github.com/pnkfelix/tango
+[lp]: https://en.wikipedia.org/wiki/Literate_programming
 
 Here's your basic Hello World:
 

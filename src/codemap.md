@@ -93,6 +93,11 @@ impl CodeMap {
         panic!("Tried to lookup {:?} but it wasn't in any \
             of the FileMaps... This is a bug!")
     }
+
+    /// The files that this `CodeMap` contains.
+    pub fn files(&self) -> &[Rc<FileMap>] {
+        self.files.as_slice()
+    }
 }
 ```
 
