@@ -26,6 +26,7 @@ makes sense to use a Rust enum here.
 ```rust
 /// Any valid token in the Delphi programming language.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(missing_docs)]
 pub enum TokenKind {
     Integer(usize),
     Decimal(f64),
@@ -459,6 +460,11 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
+/// Turn a string of valid Delphi code into a list of tokens, including the 
+/// location of that token's start and end point in the original source code.
+///
+/// Note the token indices represent the half-open interval `[start, end)`, 
+/// equivalent to `start .. end` in Rust.
 pub fn tokenize(src: &str) -> Result<Vec<(TokenKind, usize, usize)>> {
     let mut tokenizer = Tokenizer::new(src);
     let mut tokens = Vec::new();
@@ -533,6 +539,8 @@ pub struct Token {
 }
 
 impl Token {
+    /// Create a new token out of a `Span` and something which can be turned 
+    /// into a `TokenKind`.
     pub fn new<K: Into<TokenKind>>(span: Span, kind: K) -> Token {
         let kind = kind.into();
         Token { span, kind }

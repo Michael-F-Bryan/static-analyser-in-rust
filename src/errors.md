@@ -9,16 +9,19 @@ errors. Feel free to skip past this.
 
 error_chain!{
     errors {
+        /// Got to the end of the input stream but was expecting more.
         UnexpectedEOF {
             display("Unexpected EOF")
             description("Unexpected EOF")
         }
 
+        /// Reached an unknown character while lexing.
         UnknownCharacter(ch: char) {
             display("Unknown Character, {:?}", ch)
             description("Unknown Character")
         }
 
+        /// A message which corresponds to some location in the source code.
         MessageWithLocation(loc: usize, msg: &'static str) {
             display("{} at {}", msg, loc)
             description("Custom Error")

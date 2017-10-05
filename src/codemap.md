@@ -23,6 +23,9 @@ result in a panic if you are lucky, or silently give you garbage.
 
 ```rust
 /// A unique identifier pointing to a substring in some file.
+///
+/// To get back the original string this points to you'll need to look it up
+/// in a `CodeMap` or `FileMap`. 
 #[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
 pub struct Span(usize);
 ```
@@ -39,6 +42,8 @@ pub struct CodeMap {
     files: Vec<Rc<FileMap>>,
 }
 
+/// A mapping which keeps track of a file's contents and allows you to cheaply
+/// access substrings of the original content.
 #[derive(Clone, Debug)]
 pub struct FileMap {
     name: String,
@@ -53,12 +58,14 @@ string corresponding to a span.
 
 ```rust
 impl CodeMap {
+    /// Create a new, empty `CodeMap`.
     pub fn new() -> CodeMap {
         let counter = Rc::new(AtomicUsize::new(0));
         let files = Vec::new();
         CodeMap { counter, files }
     }
 
+    /// Add a new file to the `CodeMap` and get back a reference to it.
     pub fn insert_file<C, F>(&mut self, filename: F, contents: C) -> Rc<FileMap> 
     where F: Into<String>,
           C: Into<String>,
@@ -75,6 +82,7 @@ impl CodeMap {
         fm
     }
 
+    /// Get the substring that this `Span` corresponds to.
     pub fn lookup(&self, span: Span) -> &str {
         for filemap in &self.files {
             if let Some(substr) = filemap.lookup(span) {
@@ -95,6 +103,16 @@ they'll still get globally unique IDs.
 
 ```rust
 impl FileMap {
+    /// Get the name of this `FileMap`.
+    pub fn filename(&self) -> &str {
+        &self.name
+    }
+
+    /// Get the entire content of this file.
+    pub fn contents(&self) -> &str {
+        &self.contents
+    }
+
     /// Lookup a span in this `FileMap`.
     ///
     /// # Panics
@@ -118,7 +136,6 @@ impl FileMap {
     /// Get the range corresponding to this span.
     pub fn range_of(&self, span: Span) -> Option<Range<usize>> {
         self.items.borrow().get(&span).cloned() 
-
     }
 }
 ```
@@ -131,6 +148,16 @@ both within bounds, and lie on valid codepoint boundaries.
 
 ```rust
 impl FileMap {
+    /// Ask the `FileMap` to give you the span corresponding to the half-open
+    /// interval `[start, end)`.
+    ///
+    /// # Panics
+    ///
+    /// In debug mode, this will panic if either `start` or `end` are outside
+    /// the source code or if they don't lie on a codepoint boundary.
+    ///
+    /// It is assumed that the `start` and `indices` were originally obtained
+    /// from the file's contents.
     pub fn insert_span(&self, start: usize, end: usize) -> Span {
         debug_assert!(self.contents.is_char_boundary(start), 
             "Start doesn't lie on a char boundary");

@@ -37,6 +37,8 @@ need:
 //!
 //! [rendered version]: https://michael-f-bryan.github.io/static-analyser-in-rust/
 
+#![deny(missing_docs)]
+
 #[cfg(test)]
 #[macro_use]
 extern crate pretty_assertions;
