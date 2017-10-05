@@ -10,6 +10,8 @@ Before anything else, lets import some things we'll require.
 
 ```rust
 use std::str;
+use std::ops::{Deref, DerefMut};
+use std::fmt::Debug;
 use errors::*;
 ```
 
@@ -96,13 +98,6 @@ fn tokenize_ident(data: &str) -> Result<(Token, usize)> {
 }
 ```
 
-
-As a general rule, our tokenizer functions will look like this
-
-```rust
-type Tokenizer<T> = fn(&str) -> Result<(T, usize)>;
-```
-
 The `take_while()` function is just a helper which will call a closure on each
 byte, continuing until the closure no longer returns `true`. 
 
@@ -149,7 +144,7 @@ macro_rules! lexer_test {
         #[test]
         fn $name() {
             let src: &str = $src;
-            let func: Tokenizer<_> = $func;
+            let func = $func;
 
             let got = func(src);
             assert!(got.is_err(), "{:?} should be an error", got);
@@ -161,7 +156,7 @@ macro_rules! lexer_test {
         fn $name() {
             let src: &str = $src;
             let should_be = Token::from($should_be);
-            let func: Tokenizer<_> = $func;
+            let func = $func;
 
             let (got, _bytes_read) = func(src).unwrap();
             assert_eq!(got, should_be, "Input was {:?}", src);
@@ -284,6 +279,27 @@ According to [the internets], a comment in Delphi can be written multiple ways.
 
 [the internets]: https://www.prestwoodboards.com/ASPSuite/KB/Document_View.asp?QID=101505
 
+Lastly, we group the whitespace and comment skipping together seeing as they
+both do the job of skipping characters we don't care about.
+
+```rust
+/// Skip past any whitespace characters or comments.
+fn skip(src: &str) -> usize {
+    let mut remaining = src;
+
+    loop {
+        let ws = skip_whitespace(remaining);
+        remaining = &remaining[ws..];
+        let comments = skip_whitespace(remaining);
+        remaining = &remaining[comments..];
+
+        if ws + comments == 0 {
+            return src.len() - remaining.len();
+        }
+    }
+}
+```
+
 
 ## The Main Tokenizer Function
 
@@ -301,30 +317,33 @@ pub fn tokenize_single_token(data: &str) -> Result<(Token, usize)> {
         None => bail!(ErrorKind::UnexpectedEOF),
     };
 
-    match next {
-        '.' => Ok((Token::Dot, 1)),
-        '+' => Ok((Token::Plus, 1)),
-        '-' => Ok((Token::Minus, 1)),
-        '*' => Ok((Token::Asterisk, 1)),
-        '/' => Ok((Token::Slash, 1)),
-        '@' => Ok((Token::At, 1)),
-        '^' => Ok((Token::Carat, 1)),
-        '(' => Ok((Token::OpenParen, 1)),
-        ')' => Ok((Token::CloseParen, 1)),
-        '[' => Ok((Token::OpenSquare, 1)),
-        ']' => Ok((Token::CloseSquare, 1)),
-        '0' ... '9' => tokenize_number(data),
-        c @ '_' | c if c.is_alphabetic() => tokenize_ident(data),
+    let (tok, length) = match next {
+        '.' => (Token::Dot, 1),
+        '=' => (Token::Equals, 1),
+        '+' => (Token::Plus, 1),
+        '-' => (Token::Minus, 1),
+        '*' => (Token::Asterisk, 1),
+        '/' => (Token::Slash, 1),
+        '@' => (Token::At, 1),
+        '^' => (Token::Carat, 1),
+        '(' => (Token::OpenParen, 1),
+        ')' => (Token::CloseParen, 1),
+        '[' => (Token::OpenSquare, 1),
+        ']' => (Token::CloseSquare, 1),
+        '0' ... '9' => tokenize_number(data).chain_err(|| "Couldn't tokenize a number")?,
+        c @ '_' | c if c.is_alphabetic() => tokenize_ident(data)
+            .chain_err(|| "Couldn't tokenize an identifier")?,
         other => bail!(ErrorKind::UnknownCharacter(other)),
-    }
+    };
+
+    Ok((tok, length))
 }
 ```
 
 Now lets test it, in theory we should get identical results to the other tests
 written up til now.
 
-```rust
-lexer_test!(central_tokenizer_ident, tokenize_single_token, "hello" => "hello");
+```rust lexer_test!(central_tokenizer_ident, tokenize_single_token, "hello" => "hello");
 lexer_test!(central_tokenizer_integer, tokenize_single_token, "1234" => 1234);
 lexer_test!(central_tokenizer_decimal, tokenize_single_token, "123.4" => 123.4);
 lexer_test!(central_tokenizer_dot, tokenize_single_token, "." => Token::Dot);
@@ -334,8 +353,160 @@ lexer_test!(central_tokenizer_asterisk, tokenize_single_token, "*" => Token::Ast
 lexer_test!(central_tokenizer_slash, tokenize_single_token, "/" => Token::Slash);
 lexer_test!(central_tokenizer_at, tokenize_single_token, "@" => Token::At);
 lexer_test!(central_tokenizer_carat, tokenize_single_token, "^" => Token::Carat);
+lexer_test!(central_tokenizer_equals, tokenize_single_token, "=" => Token::Equals);
 lexer_test!(central_tokenizer_open_paren, tokenize_single_token, "(" => Token::OpenParen);
 lexer_test!(central_tokenizer_close_paren, tokenize_single_token, ")" => Token::CloseParen);
 lexer_test!(central_tokenizer_open_square, tokenize_single_token, "[" => Token::OpenSquare);
 lexer_test!(central_tokenizer_close_square, tokenize_single_token, "]" => Token::CloseSquare);
 ```
+
+
+## Tying It All Together
+
+Now that we can recognize individual Delphi tokens, we can wrap it in a loop 
+to tokenize an entire source file. To make life easier later on (mostly to do
+with reporting useful errors), we're going to return a `Spanned<Token>` which
+has some information attached to indicate where the token came from.
+
+```rust
+#[derive(Debug, PartialEq)]
+pub struct Spanned<T: Debug + PartialEq> {
+    pub inner: T,
+    pub start: usize,
+    pub end: usize,
+}
+```
+
+This spanned token is just a smart wrapper, therefore we're going to add a 
+couple methods to it to make inspecting the inner type easier.
+
+```rust
+impl<T: Debug + PartialEq> Deref for Spanned<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<T: Debug + PartialEq> DerefMut for Spanned<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl<T: Debug + PartialEq> Spanned<T> {
+    pub fn new<I: Into<T>>(inner: I, start: usize, end: usize) -> Self {
+        let inner = inner.into();
+        Spanned { inner, start, end }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
+}
+```
+
+Now we can write the overall tokenizer function. However, because this process
+involves a lot of state, it'll be easier to encapsulate everything in its own
+type while still exposing a high-level `tokenize()` function to users.
+
+
+```rust
+struct Tokenizer<'a> {
+    current_index: usize,
+    remaining_text: &'a str,
+}
+
+impl<'a> Tokenizer<'a> {
+    fn new(src: &str) -> Tokenizer {
+        Tokenizer {
+            current_index: 0,
+            remaining_text: src,
+        }
+    }
+
+    fn next(&mut self) -> Result<Option<Spanned<Token>>> {
+        self.skip_whitespace();
+
+        if self.remaining_text.is_empty() {
+            Ok(None)
+        } else {
+            let start = self.current_index;
+            let tok = self.next_token()
+                .chain_err(|| ErrorKind::MessageWithLocation(self.current_index,
+                    "Couldn't read the next token"))?;
+            let end = self.current_index;
+            let spanned = Spanned::new(tok, start, end);
+            Ok(Some(spanned))
+        }
+    }
+
+    fn skip_whitespace(&mut self) {
+        let skipped = skip(self.remaining_text);
+        self.chomp(skipped);
+    }
+
+    fn next_token(&mut self) -> Result<Token> {
+        let (tok, bytes_read) = tokenize_single_token(self.remaining_text)?;
+        self.chomp(bytes_read);
+
+        Ok(tok)
+    }
+
+    fn chomp(&mut self, num_bytes: usize) {
+        self.remaining_text = &self.remaining_text[num_bytes..];
+        self.current_index += num_bytes;
+    }
+}
+
+pub fn tokenize(src: &str) -> Result<Vec<Spanned<Token>>> {
+    let mut tokenizer = Tokenizer::new(src);
+    let mut tokens = Vec::new();
+
+    while let Some(tok) = tokenizer.next()? {
+        tokens.push(tok);
+    }
+
+    Ok(tokens)
+}
+```
+
+Because we also want to make sure the location of tokens are correct, testing 
+this will be a little more involved. We essentially need to write up some
+(valid) Delphi code, manually inspect it, then make sure we get back *exactly*
+what we expect.
+
+```rust
+#[cfg(test)]
+#[test]
+fn tokenize_a_basic_expression() {
+    let src = "foo = 1 + 2.34";
+    let should_be = vec![
+        Spanned::new("foo", 0, 3),
+        Spanned::new(Token::Equals, 4, 5),
+        Spanned::new(1, 6, 7),
+        Spanned::new(Token::Plus, 8, 9),
+        Spanned::new(2.34, 10, 14),
+    ];
+
+    let got = tokenize(src).unwrap();
+    assert_eq!(got, should_be);
+}
+
+#[cfg(test)]
+#[test]
+fn tokenizer_detects_invalid_stuff() {
+    let src = "foo bar `%^&\\";
+    let index_of_backtick = 8;
+
+    let err = tokenize(src).unwrap_err();
+    match err.kind() {
+        &ErrorKind::MessageWithLocation(loc, _) => assert_eq!(loc, index_of_backtick),
+        other => panic!("Unexpected error: {}", other),
+    }
+}
+```
+
+And that's about it for lexical analysis. We've now got the basic building 
+blocks of a compiler/static analyser, and are able to move onto the next 
+step... Actually making sense out of all these tokens!

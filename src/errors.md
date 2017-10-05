@@ -16,7 +16,12 @@ error_chain!{
 
         UnknownCharacter(ch: char) {
             display("Unknown Character, {:?}", ch)
-            display("Unknown Character")
+            description("Unknown Character")
+        }
+
+        MessageWithLocation(loc: usize, msg: &'static str) {
+            display("{} at {}", msg, loc)
+            description("Custom Error")
         }
     }
 

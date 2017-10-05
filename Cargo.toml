@@ -9,3 +9,4 @@ tango = "0.7"
 
 [dependencies]
 error-chain = "0.11"
+pretty_assertions = "0.3.4"
