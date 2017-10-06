@@ -85,7 +85,6 @@ dependencies.
 
 ```rust
 use std::rc::Rc;
-use std::borrow::Borrow;
 
 use lex::{Token, TokenKind};
 use codemap::{Span, FileMap};
@@ -205,7 +204,9 @@ parser_test!(parse_float_literal, parse_literal, "12.3" => LiteralKind::Decimal(
 ```
 
 Another easy thing to implement is parsing identifiers and dotted identifiers 
-(e.g. `foo.bar.baz`).
+(e.g. `foo.bar.baz`). To recognise a dotted identifier you first look for one
+identifier, then keep trying to take a pair of dots and idents until there are
+no more.
 
 
 ```rust
@@ -238,7 +239,9 @@ impl Parser {
       parts.push(next);
     }
 
-    let span = parts.iter().skip(1).fold(parts[0].span, |l, r| self.filemap.merge(l, r.span));
+    let span = parts.iter()
+                    .skip(1)
+                    .fold(parts[0].span, |l, r| self.filemap.merge(l, r.span));
 
     Ok(DottedIdent { span, parts })    
   }
@@ -249,5 +252,5 @@ We also want to test these.
 
 ```rust
 parser_test!(parse_a_basic_ident, parse_ident, "foo" => "foo");
-parser_test!(parse_a_dotted_ident, parse_dotted_ident, "foo.bar.baz" => ["foo", "bar", "baz"].borrow());
+parser_test!(parse_a_dotted_ident, parse_dotted_ident, "foo.bar.baz" => ["foo", "bar", "baz"].as_ref());
 ```

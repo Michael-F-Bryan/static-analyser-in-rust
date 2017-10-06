@@ -7,6 +7,7 @@ we can analyse.
 ```rust
 //! Parse a stream of `Tokens` into an *Abstract Syntax Tree* we can use for
 //! the later steps.
+#![allow(missing_docs, dead_code, unused_imports)]
 
 #[macro_use]
 mod macros;

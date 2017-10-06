@@ -308,7 +308,8 @@ mod tests {
                 assert!(!spans.contains(&span), 
                     "{:?} already contains {:?} ({}..{})", 
                     spans, span, start, end);
-                assert_ne!(span, Span::dummy());
+                assert!(span != Span::dummy());
+
                 spans.push(span);
             }
         }
