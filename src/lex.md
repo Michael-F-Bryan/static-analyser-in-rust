@@ -548,6 +548,13 @@ impl Token {
         Token { span, kind }
     }
 }
+
+impl<T> From<T> for Token 
+where T: Into<TokenKind> {
+    fn from(other: T) -> Token {
+        Token::new(Span::dummy(), other)
+    }
+}
 ```
 
 And that's about it for lexical analysis. We've now got the basic building 

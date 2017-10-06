@@ -30,8 +30,9 @@ result in a panic if you are lucky, or silently give you garbage.
 pub struct Span(usize);
 
 impl Span {
-    /// Returns the special "dummy" span, which matches anything.
-    pub fn dummy() -> Span {
+    /// Returns the special "dummy" span, which matches anything. This should
+    /// only be used internally to make testing easier.
+    pub(crate) fn dummy() -> Span {
         Span(0)
     }
 }

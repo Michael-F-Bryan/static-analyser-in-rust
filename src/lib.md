@@ -76,6 +76,7 @@ of branches, loops, and `try/catch` blocks encountered.
 [cyclomatic complexity]: https://en.wikipedia.org/wiki/Cyclomatic_complexity
 
 ```rust
+#[macro_use]
 pub mod parse;
 ```
 

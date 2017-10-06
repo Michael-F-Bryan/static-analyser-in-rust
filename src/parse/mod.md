@@ -8,6 +8,8 @@ we can analyse.
 //! Parse a stream of `Tokens` into an *Abstract Syntax Tree* we can use for
 //! the later steps.
 
+#[macro_use]
+mod macros;
 mod parser;
 pub use self::parser::Parser;
 ```
