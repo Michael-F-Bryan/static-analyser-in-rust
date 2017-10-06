@@ -67,9 +67,11 @@ impl<'a> PartialEq<&'a str> for Ident {
     }
 }
 
-impl<'a> PartialEq<&'a [&'a str]> for DottedIdent {
-    fn eq(&self, other: &&'a [&'a str]) -> bool {
-        self.parts.iter().zip(other.iter()).all(|(l, r)| l == r)
+impl<'a, T: AsRef<[&'a str]>> PartialEq<T> for DottedIdent {
+    fn eq(&self, other: &T) -> bool {
+        self.parts.iter()
+            .zip(other.as_ref().iter())
+            .all(|(l, r)| l == r)
     }
 }
 ```

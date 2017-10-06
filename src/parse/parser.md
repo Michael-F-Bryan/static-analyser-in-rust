@@ -248,9 +248,10 @@ impl Parser {
 }
 ```
 
-We also want to test these.
+Using our `parser_test!()` macro makes these a piece of cake to test.
 
 ```rust
 parser_test!(parse_a_basic_ident, parse_ident, "foo" => "foo");
-parser_test!(parse_a_dotted_ident, parse_dotted_ident, "foo.bar.baz" => ["foo", "bar", "baz"].as_ref());
+parser_test!(parse_a_dotted_ident, parse_dotted_ident, "foo.bar.baz" => ["foo", "bar", "baz"]);
+parser_test!(parse_a_single_ident_as_dotted, parse_dotted_ident, "foo" => ["foo"]);
 ```
