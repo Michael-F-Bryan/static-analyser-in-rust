@@ -1,0 +1,1679 @@
+<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Create a Static Analyser in Rust</title>
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <base href="">
+
+        <link rel="stylesheet" href="book.css">
+        <link href="https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800" rel="stylesheet" type="text/css">
+        <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro:500" rel="stylesheet" type="text/css">
+
+        <link rel="shortcut icon" href="favicon.png">
+
+        <!-- Font Awesome -->
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme -->
+        
+
+        
+
+        <!-- Fetch Clipboard.js from CDN but have a local fallback -->
+        <script src="https://cdn.jsdelivr.net/clipboard.js/1.6.1/clipboard.min.js"></script>
+        <script>
+            if (typeof Clipboard == 'undefined') {
+                document.write(unescape("%3Cscript src='clipboard.min.js'%3E%3C/script%3E"));
+            }
+        </script>
+
+        <!-- Fetch JQuery from CDN but have a local fallback -->
+        <script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+        <script>
+            if (typeof jQuery == 'undefined') {
+                document.write(unescape("%3Cscript src='jquery.js'%3E%3C/script%3E"));
+            }
+        </script>
+
+        <!-- Fetch store.js from local - TODO add CDN when 2.x.x is available on cdnjs -->
+        <script src="store.js"></script>
+
+        <!-- Custom JS script -->
+        
+
+    </head>
+    <body class="light">
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme = store.get('mdbook-theme');
+            if (theme === null || theme === undefined) { theme = 'light'; }
+            $('body').removeClass().addClass(theme);
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var sidebar = store.get('mdbook-sidebar');
+            if (sidebar === "hidden") { $("html").addClass("sidebar-hidden") }
+            else if (sidebar === "visible") { $("html").addClass("sidebar-visible") }
+        </script>
+
+        <div id="sidebar" class="sidebar">
+            <ul class="chapter"><li class="affix"><a href="./lib.html">Overview</a></li><li class="spacer"></li><li><a href="./lex.html"><strong>1.</strong> Lexing</a></li><li><a href="./parse/mod.html"><strong>2.</strong> Parsing</a></li><li><ul class="section"><li><a href="./parse/macros.html"><strong>2.1.</strong> Helper Macros</a></li><li><a href="./parse/parser.html"><strong>2.2.</strong> The Parser</a></li><li><a href="./parse/ast.html"><strong>2.3.</strong> The Abstract Syntax Tree</a></li></ul></li><li><a href="./lowering.html"><strong>3.</strong> Type Checking and Lowering</a></li><li><a href="./analysis.html"><strong>4.</strong> Static Analysis</a></li><li><a href="./driver.html"><strong>5.</strong> The Driver</a></li><li class="spacer"></li><li class="affix"><a href="./errors.html">Error Handling</a></li><li class="affix"><a href="./codemap.html">The Code Map</a></li></ul>
+        </div>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page" tabindex="-1">
+                <div id="menu-bar" class="menu-bar">
+                    <div class="left-buttons">
+                        <i id="sidebar-toggle" class="fa fa-bars"></i>
+                        <i id="theme-toggle" class="fa fa-paint-brush"></i>
+                    </div>
+
+                    <h1 class="menu-title">Create a Static Analyser in Rust</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html">
+                            <i id="print-button" class="fa fa-print" title="Print this book"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <div id="content" class="content">
+                    <a class="header" href="print.html#writing-a-static-analyser-in-rust" id="writing-a-static-analyser-in-rust"><h1>Writing a Static Analyser in Rust</h1></a>
+<p>To try out the concept of <a href="https://en.wikipedia.org/wiki/Literate_programming"><em>Literate Programming</em></a> (using the awesome <a href="https://github.com/pnkfelix/tango">tango</a>
+crate), I'm going to write a small static analyser for a basic Programming
+language. Because it's so much more interesting to use a programming language
+available in the wild, compared to some contrived example, we're going to
+analyse Delphi (a Pascal variant).</p>
+<p>Believe it or not, but this entire book is the actual source code for this
+static analyser. Check out the <a href="https://github.com/Michael-F-Bryan/static-analyser-in-rust">repo</a> on GitHub if you want to see more.</p>
+<p>Here's your basic Hello World:</p>
+<pre><code class="language-pascal">procedure TForm1.ShowAMessage;
+begin
+  ShowMessage('Hello World!');
+end;
+</code></pre>
+<p>All you need to do is use the IDE to hook that function up to be run whenever
+a button is clicked and it'll show a &quot;Hello World!&quot; dialog.</p>
+<blockquote>
+<p><strong>Note:</strong> The API docs for this crate should be placed alongside the book.
+You can access then <a href="../doc/static_analyser/index.html">here</a> (you'll need
+to use <code>cargo doc --open</code> if viewing locally).</p>
+</blockquote>
+<p>First up, lets add some top-level docs and import some crates we're going to
+need:</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+//! A parser and static analysis library for exploring Delphi code.
+//!
+//! This is written using a *Literate Programming* style, so you may find it
+//! easier to inspect the [rendered version] instead.
+//!
+//! [rendered version]: https://michael-f-bryan.github.io/static-analyser-in-rust/
+
+#![deny(missing_docs)]
+
+#[cfg(test)]
+#[macro_use]
+extern crate pretty_assertions;
+#[macro_use]
+extern crate error_chain;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+#}</code></pre></pre>
+<p>There are several steps you need to perform to do static analysis, first is
+tokenizing (often called <em>lexical analysis</em>). This stage turns the characters
+in the raw source code into <code>Tokens</code> like &quot;if&quot;, &quot;begin&quot;, integer literals and
+operators.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+pub mod lex;
+#}</code></pre></pre>
+<p>Next we do the parsing stage (<em>semantic analysis</em>) to convert our stream of
+tokens into an Abstract Syntax Tree. This is a representation of the program
+as it exists on disk.</p>
+<p>A lot of static analysis passes can get away with working purely at the AST
+level. For example, if you want to make sure people don't accidentally divide
+by zero it's just a case of looking for all division nodes and checking that
+the right hand isn't a numeric literal representing zero (e.g. <code>0</code> or <code>0.0</code>).</p>
+<p>Another useful lint which can be applied at this level is
+<a href="https://en.wikipedia.org/wiki/Cyclomatic_complexity">cyclomatic complexity</a>, i.e. how &quot;complex&quot; a function/procedure is. This is
+normally just a case of walking the body of a function and counting the number
+of branches, loops, and <code>try/catch</code> blocks encountered.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+#[macro_use]
+pub mod parse;
+#}</code></pre></pre>
+<p>The third step is type checking and generating a High level Intermediate
+Representation (HIR), often referred to as &quot;lowering&quot; (converting from a high
+level representation to a lower one).</p>
+<p>While the AST is very flexible and useful, it works at the language syntax
+level and completely misses the <em>semantics</em> of a language. This means an
+expression like <code>'foo' + 42</code> or dereferencing a float is a perfectly valid
+AST node.</p>
+<p>To perform some of the more advanced analyses we'll need to have access to
+the full context surrounding an expression to determine if it is valid. This
+typically involves figuring out the type for each variable and expression,
+as well as resolving imports and stitching multiple unit files into one
+cohesive data structure.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+pub mod lowering;
+#}</code></pre></pre>
+<p>Now we've <em>finally</em> resolved all imports and types we're <em>guaranteed</em> to have
+a syntactically and semantically valid program. This doesn't mean it's correct
+though! At this stage we can create passes which employ the full strength of
+the compiler/static analyser to check the <em>logic</em> of our program. This lets
+us do</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+pub mod analysis;
+#}</code></pre></pre>
+<p>We also need to handle internal errors. To keep things clean lets put that in
+its own module too.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+pub mod errors;
+#}</code></pre></pre>
+<p>Another very important thing to have is a mapping which lets you talk about a
+logical chunk of code (i.e. <em>this</em> function body or <em>that</em> string literal) and
+retrieve the corresponding source code. This will be crucial for the later
+steps where we want to indicate where an error occurred to the user.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+pub mod codemap;
+#}</code></pre></pre>
+<p>Finally, there's the <code>Driver</code>. He's in charge of the show an is usually the
+thing you'll want to invoke or hook into to tweak the analysis process.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+mod driver;
+pub use driver::Driver;
+#}</code></pre></pre>
+<a class="header" href="print.html#a-note-on-project-design" id="a-note-on-project-design"><h2>A Note on Project Design</h2></a>
+<p>A lot of the time, if you need to write a parser you'll want to use some sort
+of parser combinator or generator library. This greatly decreases the effort
+and time required, but you often trade that off with poor error handling and
+error messages. Because we're writing a tool for analysing your code, it stands
+to reason that if the user passes in dodgy code, we can detect this (without
+crashing) and emit a <strong>useful</strong> error message. All of this means that we'll
+want to write the lexing and parsing stuff by hand instead of deferring to
+another tool.</p>
+<p>If you are following along at home, click through to one of the sections to
+learn about it in more detail.</p>
+<a class="header" href="print.html#lexical-analysis" id="lexical-analysis"><h1>Lexical Analysis</h1></a>
+<p>It's always nice to add doc-comments so rustdoc knows what this module does.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+//! Module for performing lexical analysis on source code.
+#}</code></pre></pre>
+<p>Before anything else, lets import some things we'll require.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+use std::str;
+use codemap::Span;
+use errors::*;
+#}</code></pre></pre>
+<p>A lexer's job is to turn normal strings (which a human can read) into
+something more computer-friendly called a <code>Token</code>. In this crate, a <code>Token</code>
+will be comprised of a <code>Span</code> (more about that <a href="./codemap.html">later</a>), and a <code>TokenKind</code>
+which lets us know which type of token we are dealing with. A <code>TokenKind</code> can
+be multiple different types representing multiple different things, so it
+makes sense to use a Rust enum here.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// Any valid token in the Delphi programming language.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[allow(missing_docs)]
+#[serde(tag = &quot;type&quot;)]
+pub enum TokenKind {
+    Integer(usize),
+    Decimal(f64),
+    Identifier(String),
+    QuotedString(String),
+    Asterisk,
+    At, 
+    Carat, 
+    CloseParen, 
+    CloseSquare, 
+    Colon,
+    Dot, 
+    End,
+    Equals,
+    Minus, 
+    OpenParen, 
+    OpenSquare, 
+    Plus,
+    Semicolon,
+    Slash,
+}
+#}</code></pre></pre>
+<p>We'll also want to implement some helpers to make conversion more ergonomic.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl From&lt;String&gt; for TokenKind {
+    fn from(other: String) -&gt; TokenKind {
+        TokenKind::Identifier(other)
+    }
+}
+
+impl&lt;'a&gt; From&lt;&amp;'a str&gt; for TokenKind {
+    fn from(other: &amp;'a str) -&gt; TokenKind {
+        TokenKind::Identifier(other.to_string())
+    }
+}
+
+impl From&lt;usize&gt; for TokenKind {
+    fn from(other: usize) -&gt; TokenKind {
+        TokenKind::Integer(other)
+    }
+}
+
+impl From&lt;f64&gt; for TokenKind {
+    fn from(other: f64) -&gt; TokenKind {
+        TokenKind::Decimal(other)
+    }
+}
+#}</code></pre></pre>
+<a class="header" href="print.html#tokenizing-individual-atoms" id="tokenizing-individual-atoms"><h2>Tokenizing Individual Atoms</h2></a>
+<p>To make things easy, we'll break tokenizing up into little functions which
+take some string slice (<code>&amp;str</code>) and spit out either a token or an error.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+fn tokenize_ident(data: &amp;str) -&gt; Result&lt;(TokenKind, usize)&gt; {
+    // identifiers can't start with a number
+    match data.chars().next() {
+        Some(ch) if ch.is_digit(10) =&gt; bail!(&quot;Identifiers can't start with a number&quot;),
+        None =&gt; bail!(ErrorKind::UnexpectedEOF),
+        _ =&gt; {},
+    }
+
+    let (got, bytes_read) = take_while(data, |ch| ch == '_' || ch.is_alphanumeric())?;
+
+    // TODO: Recognise keywords using a `match` statement here.
+
+    let tok = TokenKind::Identifier(got.to_string());
+    Ok((tok, bytes_read))
+}
+#}</code></pre></pre>
+<p>The <code>take_while()</code> function is just a helper which will call a closure on each
+byte, continuing until the closure no longer returns <code>true</code>.</p>
+<p>It's pretty simple in that you just keep track of the current index, then
+afterwards convert everything from the start up to the index into a <code>&amp;str</code>.
+Making sure to return the number of bytes consumed (that bit will be useful
+for later when we deal with spans).</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// Consumes bytes while a predicate evaluates to true.
+fn take_while&lt;F&gt;(data: &amp;str, mut pred: F) -&gt; Result&lt;(&amp;str, usize)&gt;  
+where F: FnMut(char) -&gt; bool
+{
+    let mut current_index = 0;
+
+    for ch in data.chars() {
+        let should_continue = pred(ch);
+
+        if !should_continue {
+            break;
+        }
+
+        current_index += ch.len_utf8();
+    }
+
+    if current_index == 0 {
+        Err(&quot;No Matches&quot;.into())
+    } else {
+        Ok((&amp;data[..current_index], current_index))
+    }
+}
+#}</code></pre></pre>
+<p>Now lets test it! To make life easier, we'll create a helper macro which
+generates a test for us. We just need to pass in a test name and the function
+being tested, and an input string and expected output. Then the macro will do
+the rest.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+macro_rules! lexer_test {
+    (FAIL: $name:ident, $func:ident, $src:expr) =&gt; {
+        #[cfg(test)]
+        #[test]
+        fn $name() {
+            let src: &amp;str = $src;
+            let func = $func;
+
+            let got = func(src);
+            assert!(got.is_err(), &quot;{:?} should be an error&quot;, got);
+        }
+    };
+    ($name:ident, $func:ident, $src:expr =&gt; $should_be:expr) =&gt; {
+        #[cfg(test)]
+        #[test]
+        fn $name() {
+            let src: &amp;str = $src;
+            let should_be = TokenKind::from($should_be);
+            let func = $func;
+
+            let (got, _bytes_read) = func(src).unwrap();
+            assert_eq!(got, should_be, &quot;Input was {:?}&quot;, src);
+        }
+    };
+}
+#}</code></pre></pre>
+<p>Now a test to check tokenizing identifiers becomes trivial.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+lexer_test!(tokenize_a_single_letter, tokenize_ident, &quot;F&quot; =&gt; &quot;F&quot;);
+lexer_test!(tokenize_an_identifer, tokenize_ident, &quot;Foo&quot; =&gt; &quot;Foo&quot;);
+lexer_test!(tokenize_ident_containing_an_underscore, tokenize_ident, &quot;Foo_bar&quot; =&gt; &quot;Foo_bar&quot;);
+lexer_test!(FAIL: tokenize_ident_cant_start_with_number, tokenize_ident, &quot;7Foo_bar&quot;);
+lexer_test!(FAIL: tokenize_ident_cant_start_with_dot, tokenize_ident, &quot;.Foo_bar&quot;);
+#}</code></pre></pre>
+<p>Note that the macro calls <code>into()</code> on the result for us. Because we've defined
+<code>From&lt;&amp;'a str&gt;</code> for <code>TokenKind</code>, we can use <code>&quot;Foo&quot;</code> as shorthand for the output.</p>
+<p>It'also fairly easy to tokenize integers, they're just a continuous string of
+digits. However if we also want to be able to deal with decimal numbers we
+need to accept something that <em>may</em> look like two integers separated by a
+dot. In this case we the predicate needs to keep track of how many <code>.</code>'s it
+has seen, returning <code>false</code> the moment it sees more than one.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// Tokenize a numeric literal.
+fn tokenize_number(data: &amp;str) -&gt; Result&lt;(TokenKind, usize)&gt; {
+    let mut seen_dot = false;
+
+    let (decimal, bytes_read) = take_while(data, |c| {
+        if c.is_digit(10) {
+            true
+        } else if c == '.' {
+            if !seen_dot {
+                seen_dot = true;
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    })?;
+
+    if seen_dot {
+        let n: f64 = decimal.parse()?;
+        Ok((TokenKind::Decimal(n), bytes_read))
+    } else {
+        let n: usize = decimal.parse()?;
+        Ok((TokenKind::Integer(n), bytes_read))
+
+    }
+}
+#}</code></pre></pre>
+<p>Something interesting with this approach is that a literal like <code>12.4.789</code>
+will be lexed as the decimal <code>12.4</code> followed by a <code>.789</code>, which is an invalid
+float.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+lexer_test!(tokenize_a_single_digit_integer, tokenize_number, &quot;1&quot; =&gt; 1);
+lexer_test!(tokenize_a_longer_integer, tokenize_number, &quot;1234567890&quot; =&gt; 1234567890);
+lexer_test!(tokenize_basic_decimal, tokenize_number, &quot;12.3&quot; =&gt; 12.3);
+lexer_test!(tokenize_string_with_multiple_decimal_points, tokenize_number, &quot;12.3.456&quot; =&gt; 12.3);
+lexer_test!(FAIL: cant_tokenize_a_string_as_a_decimal, tokenize_number, &quot;asdfghj&quot;);
+lexer_test!(tokenizing_decimal_stops_at_alpha, tokenize_number, &quot;123.4asdfghj&quot; =&gt; 123.4);
+#}</code></pre></pre>
+<p>One last utility we're going to need is the ability to skip past whitespace
+characters and comments. These will be implemented as two separate functions
+which are wrapped by a single <code>skip()</code>.</p>
+<p>Let's deal with whitespace first seeing as that's easiest.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+fn skip_whitespace(data: &amp;str) -&gt; usize {
+    match take_while(data, |ch| ch.is_whitespace()) {
+        Ok((_, bytes_skipped)) =&gt; bytes_skipped,
+        _ =&gt; 0,
+    }
+}
+
+#[test]
+fn skip_past_several_whitespace_chars() {
+    let src = &quot; \t\n\r123&quot;;
+    let should_be = 4;
+
+    let num_skipped = skip_whitespace(src);
+    assert_eq!(num_skipped, should_be);
+}
+
+#[test]
+fn skipping_whitespace_when_first_is_a_letter_returns_zero() {
+    let src = &quot;Hello World&quot;;
+    let should_be = 0;
+
+    let num_skipped = skip_whitespace(src);
+    assert_eq!(num_skipped, should_be);
+}
+#}</code></pre></pre>
+<blockquote>
+<p><strong>TODO:</strong> Tokenize string literals</p>
+</blockquote>
+<p>According to <a href="https://wwgetw.prestwoodboards.com/ASPSuite/KB/Document_View.asp?QID=101505">the internets</a>, a comment in Delphi can be written multiple ways.</p>
+<blockquote>
+<p><strong>Commenting Code</strong></p>
+<p>Delphi uses <code>//</code> for a single line comment and both <code>{}</code> and <code>(**)</code> for
+multiple line comments. Although you can nest different types of multiple
+line comments, it is recommended that you don't.</p>
+<p><strong>Compiler Directives - <code>$</code></strong></p>
+<p>A special comment. Delphi compiler directives are in the form of
+<code>{$DIRECTIVE}</code>. Of interest for comments is using the <code>$IFDEF</code> compiler
+directive to remark out code.</p>
+</blockquote>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+fn skip_comments(src: &amp;str) -&gt; usize {
+    let pairs = [(&quot;//&quot;, &quot;\n&quot;), (&quot;{&quot;, &quot;}&quot;), (&quot;(*&quot;, &quot;*)&quot;)];
+
+    for &amp;(pattern, matcher) in &amp;pairs {
+        if src.starts_with(pattern) {
+            let leftovers = skip_until(src, matcher);
+            return src.len() - leftovers.len();
+        }
+    }
+
+    0
+}
+
+fn skip_until&lt;'a&gt;(mut src: &amp;'a str, pattern: &amp;str) -&gt; &amp;'a str {
+    while !src.is_empty() &amp;&amp; !src.starts_with(pattern) {
+        let next_char_size = src.chars().next().expect(&quot;The string isn't empty&quot;).len_utf8();
+        src = &amp;src[next_char_size..];
+    }
+
+    &amp;src[pattern.len()..]
+}
+
+macro_rules! comment_test {
+    ($name:ident, $src:expr =&gt; $should_be:expr) =&gt; {
+        #[cfg(test)]
+        #[test]
+        fn $name() {
+            let got = skip_comments($src);
+            assert_eq!(got, $should_be);
+        }
+    }
+}
+
+comment_test!(slash_slash_skips_to_end_of_line, &quot;// foo bar { baz }\n 1234&quot; =&gt; 19);
+comment_test!(comment_skip_curly_braces, &quot;{ baz \n 1234} hello wor\nld&quot; =&gt; 13);
+comment_test!(comment_skip_round_brackets, &quot;(* Hello World *) asd&quot; =&gt; 17);
+comment_test!(comment_skip_ignores_alphanumeric, &quot;123 hello world&quot; =&gt; 0);
+comment_test!(comment_skip_ignores_whitespace, &quot;   (* *) 123 hello world&quot; =&gt; 0);
+#}</code></pre></pre>
+<p>Lastly, we group the whitespace and comment skipping together seeing as they
+both do the job of skipping characters we don't care about.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// Skip past any whitespace characters or comments.
+fn skip(src: &amp;str) -&gt; usize {
+    let mut remaining = src;
+
+    loop {
+        let ws = skip_whitespace(remaining);
+        remaining = &amp;remaining[ws..];
+        let comments = skip_comments(remaining);
+        remaining = &amp;remaining[comments..];
+
+        if ws + comments == 0 {
+            return src.len() - remaining.len();
+        }
+    }
+}
+#}</code></pre></pre>
+<a class="header" href="print.html#the-main-tokenizer-function" id="the-main-tokenizer-function"><h2>The Main Tokenizer Function</h2></a>
+<p>To tie everything together, we'll use a method which matches the next
+character against various patterns in turn. This is essentially just a big
+<code>match</code> statement which defers to the small tokenizer functions we've built
+up until now.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// Try to lex a single token from the input stream.
+pub fn tokenize_single_token(data: &amp;str) -&gt; Result&lt;(TokenKind, usize)&gt; {
+    let next = match data.chars().next() {
+        Some(c) =&gt; c,
+        None =&gt; bail!(ErrorKind::UnexpectedEOF),
+    };
+
+    let (tok, length) = match next {
+        '.' =&gt; (TokenKind::Dot, 1),
+        '=' =&gt; (TokenKind::Equals, 1),
+        '+' =&gt; (TokenKind::Plus, 1),
+        '-' =&gt; (TokenKind::Minus, 1),
+        '*' =&gt; (TokenKind::Asterisk, 1),
+        '/' =&gt; (TokenKind::Slash, 1),
+        '@' =&gt; (TokenKind::At, 1),
+        '^' =&gt; (TokenKind::Carat, 1),
+        '(' =&gt; (TokenKind::OpenParen, 1),
+        ')' =&gt; (TokenKind::CloseParen, 1),
+        '[' =&gt; (TokenKind::OpenSquare, 1),
+        ']' =&gt; (TokenKind::CloseSquare, 1),
+        '0' ... '9' =&gt; tokenize_number(data).chain_err(|| &quot;Couldn't tokenize a number&quot;)?,
+        c @ '_' | c if c.is_alphabetic() =&gt; tokenize_ident(data)
+            .chain_err(|| &quot;Couldn't tokenize an identifier&quot;)?,
+        other =&gt; bail!(ErrorKind::UnknownCharacter(other)),
+    };
+
+    Ok((tok, length))
+}
+#}</code></pre></pre>
+<p>Now lets test it, in theory we should get identical results to the other tests
+written up til now.</p>
+<pre><pre class="playpen"><code class="language-rustlexer_test!(central_tokenizer_ident tokenize_single_token &quot;hello&quot;=&gt;&quot;hello&quot;);">
+# #![allow(unused_variables)]
+#fn main() {
+lexer_test!(central_tokenizer_integer, tokenize_single_token, &quot;1234&quot; =&gt; 1234);
+lexer_test!(central_tokenizer_decimal, tokenize_single_token, &quot;123.4&quot; =&gt; 123.4);
+lexer_test!(central_tokenizer_dot, tokenize_single_token, &quot;.&quot; =&gt; TokenKind::Dot);
+lexer_test!(central_tokenizer_plus, tokenize_single_token, &quot;+&quot; =&gt; TokenKind::Plus);
+lexer_test!(central_tokenizer_minus, tokenize_single_token, &quot;-&quot; =&gt; TokenKind::Minus);
+lexer_test!(central_tokenizer_asterisk, tokenize_single_token, &quot;*&quot; =&gt; TokenKind::Asterisk);
+lexer_test!(central_tokenizer_slash, tokenize_single_token, &quot;/&quot; =&gt; TokenKind::Slash);
+lexer_test!(central_tokenizer_at, tokenize_single_token, &quot;@&quot; =&gt; TokenKind::At);
+lexer_test!(central_tokenizer_carat, tokenize_single_token, &quot;^&quot; =&gt; TokenKind::Carat);
+lexer_test!(central_tokenizer_equals, tokenize_single_token, &quot;=&quot; =&gt; TokenKind::Equals);
+lexer_test!(central_tokenizer_open_paren, tokenize_single_token, &quot;(&quot; =&gt; TokenKind::OpenParen);
+lexer_test!(central_tokenizer_close_paren, tokenize_single_token, &quot;)&quot; =&gt; TokenKind::CloseParen);
+lexer_test!(central_tokenizer_open_square, tokenize_single_token, &quot;[&quot; =&gt; TokenKind::OpenSquare);
+lexer_test!(central_tokenizer_close_square, tokenize_single_token, &quot;]&quot; =&gt; TokenKind::CloseSquare);
+#}</code></pre></pre>
+<a class="header" href="print.html#tying-it-all-together" id="tying-it-all-together"><h2>Tying It All Together</h2></a>
+<p>Now we can write the overall tokenizer function. However, because this process
+involves a lot of state, it'll be easier to encapsulate everything in its own
+type while still exposing a high-level <code>tokenize()</code> function to users.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+struct Tokenizer&lt;'a&gt; {
+    current_index: usize,
+    remaining_text: &amp;'a str,
+}
+
+impl&lt;'a&gt; Tokenizer&lt;'a&gt; {
+    fn new(src: &amp;str) -&gt; Tokenizer {
+        Tokenizer {
+            current_index: 0,
+            remaining_text: src,
+        }
+    }
+
+    fn next_token(&amp;mut self) -&gt; Result&lt;Option&lt;(TokenKind, usize, usize)&gt;&gt; {
+        self.skip_whitespace();
+
+        if self.remaining_text.is_empty() {
+            Ok(None)
+        } else {
+            let start = self.current_index;
+            let tok = self._next_token()
+                .chain_err(|| ErrorKind::MessageWithLocation(self.current_index,
+                    &quot;Couldn't read the next token&quot;))?;
+            let end = self.current_index;
+            Ok(Some((tok, start, end)))
+        }
+    }
+
+    fn skip_whitespace(&amp;mut self) {
+        let skipped = skip(self.remaining_text);
+        self.chomp(skipped);
+    }
+
+    fn _next_token(&amp;mut self) -&gt; Result&lt;TokenKind&gt; {
+        let (tok, bytes_read) = tokenize_single_token(self.remaining_text)?;
+        self.chomp(bytes_read);
+
+        Ok(tok)
+    }
+
+    fn chomp(&amp;mut self, num_bytes: usize) {
+        self.remaining_text = &amp;self.remaining_text[num_bytes..];
+        self.current_index += num_bytes;
+    }
+}
+
+/// Turn a string of valid Delphi code into a list of tokens, including the 
+/// location of that token's start and end point in the original source code.
+///
+/// Note the token indices represent the half-open interval `[start, end)`, 
+/// equivalent to `start .. end` in Rust.
+pub fn tokenize(src: &amp;str) -&gt; Result&lt;Vec&lt;(TokenKind, usize, usize)&gt;&gt; {
+    let mut tokenizer = Tokenizer::new(src);
+    let mut tokens = Vec::new();
+
+    while let Some(tok) = tokenizer.next_token()? {
+        tokens.push(tok);
+    }
+
+    Ok(tokens)
+}
+#}</code></pre></pre>
+<p>Because we also want to make sure the location of tokens are correct, testing
+this will be a little more involved. We essentially need to write up some
+(valid) Delphi code, manually inspect it, then make sure we get back <em>exactly</em>
+what we expect. Byte indices and all.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+#[cfg(test)]
+#[test]
+fn tokenize_a_basic_expression() {
+    let src = &quot;foo = 1 + 2.34&quot;;
+    let should_be = vec![
+        (TokenKind::from(&quot;foo&quot;), 0, 3),
+        (TokenKind::Equals, 4, 5),
+        (TokenKind::from(1), 6, 7),
+        (TokenKind::Plus, 8, 9),
+        (TokenKind::from(2.34), 10, 14),
+    ];
+
+    let got = tokenize(src).unwrap();
+    assert_eq!(got, should_be);
+}
+
+#[cfg(test)]
+#[test]
+fn tokenizer_detects_invalid_stuff() {
+    let src = &quot;foo bar `%^&amp;\\&quot;;
+    let index_of_backtick = 8;
+
+    let err = tokenize(src).unwrap_err();
+    match err.kind() {
+        &amp;ErrorKind::MessageWithLocation(loc, _) =&gt; assert_eq!(loc, index_of_backtick),
+        other =&gt; panic!(&quot;Unexpected error: {}&quot;, other),
+    }
+}
+#}</code></pre></pre>
+<p>You'll probably notice that we're returning a <code>TokenKind</code> and a pair of integers
+inside a tuple, which isn't overly idiomatic. Idiomatic Rust would bundle
+these up into a more strongly typed tuple of <code>TokenKind</code> and <code>Span</code>, where a span
+corresponds to the start and end indices of the token.</p>
+<p>The reason we do things slightly strangly is that we're using a <code>CodeMap</code> to
+manage all these <code>Span</code>s, so when the caller calls the <code>tokenize()</code> function
+it's their responsibility to insert these token locations into a <code>CodeMap</code>.
+By returning a plain tuple of integers it means we can defer dealing with the
+<code>CodeMap</code> until later on. Vastly simplifying the tokenizing code.</p>
+<p>For completeness though, here is the <code>Token</code> people will be using. We haven't
+created any in this module, but it makes sense for its definition to be here.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// A valid Delphi source code token.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Token {
+    /// The token's location relative to the rest of the files being 
+    /// processed.
+    pub span: Span,
+    /// What kind of token is this?
+    pub kind: TokenKind,
+}
+
+impl Token {
+    /// Create a new token out of a `Span` and something which can be turned 
+    /// into a `TokenKind`.
+    pub fn new&lt;K: Into&lt;TokenKind&gt;&gt;(span: Span, kind: K) -&gt; Token {
+        let kind = kind.into();
+        Token { span, kind }
+    }
+}
+
+impl&lt;T&gt; From&lt;T&gt; for Token 
+where T: Into&lt;TokenKind&gt; {
+    fn from(other: T) -&gt; Token {
+        Token::new(Span::dummy(), other)
+    }
+}
+#}</code></pre></pre>
+<p>And that's about it for lexical analysis. We've now got the basic building
+blocks of a compiler/static analyser, and are able to move onto the next
+step... Actually making sense out of all these tokens!</p>
+<a class="header" href="print.html#the-parsing-stage" id="the-parsing-stage"><h1>The Parsing Stage</h1></a>
+<p>The Core part of the parsing stage is our <code>Parser</code>. This is what actually
+converts the tokens from a single file into an Abstract Syntax Tree which
+we can analyse.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+//! Parse a stream of `Tokens` into an *Abstract Syntax Tree* we can use for
+//! the later steps.
+#![allow(missing_docs, dead_code, unused_imports)]
+
+#[macro_use]
+mod macros;
+mod parser;
+pub use self::parser::Parser;
+#}</code></pre></pre>
+<p>The other important datastructure in this module is the Abstract Syntax Tree
+and its various types of nodes.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+mod ast;
+pub use self::ast::{Literal, LiteralKind, Ident, DottedIdent};
+#}</code></pre></pre>
+<p>If you are following along at home you'll probably want to keep the pages for
+both the <code>Parser</code> and the <code>AST</code> open in tabs so you can swap between them
+easily.</p>
+<a class="header" href="print.html#macros" id="macros"><h1>Macros</h1></a>
+<p>To make testing easier, we're going to create a <code>tok!()</code> macro which uses
+the magic of <code>Into&lt;Token&gt;</code> to intelligently create tokens.</p>
+<pre><pre class="playpen"><code class="language-rust">/// Shorthand macro for generating a token from *anything* which can be 
+/// converted into a `TokenKind`, or any of the `TokenKind` variants.
+///
+/// # Examples
+///
+/// ```
+/// #[macro_use]
+/// extern crate static_analyser;
+///
+/// # fn main() {
+/// tok!(Dot);
+/// tok!(123);
+/// tok!(3.14);
+/// tok!(OpenParen);
+/// # }
+/// ```
+#[macro_export]
+macro_rules! tok {
+    ($thing:tt) =&gt;  {
+        {
+            #[allow(unused_imports)]
+            use $crate::lex::TokenKind::*;
+            $crate::lex::Token::from($thing)
+        }
+    };
+}
+</code></pre></pre>
+<p>We also want to add some tests to make sure the code it expands to is sane.
+Amusingly enough, we're going to write a macro to help generate tests to
+test our <code>tok!()</code> macro. This helps sidestep the otherwise unnecessary
+boilerplate around creating loads of <em>almost similar</em> tests which may deal
+with different types and syntactic structures.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+#[cfg(test)]
+mod tests {
+    use codemap::Span;
+    use lex::{Token, TokenKind};
+
+    macro_rules! token_macro_test {
+        ($name:ident, $from:tt =&gt; $to:expr) =&gt; {
+            #[test]
+            fn $name() {
+                let got: Token = tok!($from);
+                let should_be = Token::new(Span::dummy(), $to);
+
+                assert_eq!(got, should_be);
+            }
+        }
+    }
+
+    token_macro_test!(tok_expands_to_dot, Dot =&gt; TokenKind::Dot);
+    token_macro_test!(tok_expands_to_openparen, OpenParen =&gt; TokenKind::OpenParen);
+    token_macro_test!(tok_expands_to_integer, 1234 =&gt; TokenKind::Integer(1234));
+    token_macro_test!(tok_expands_to_decimal, 12.34 =&gt; TokenKind::Decimal(12.34));
+    token_macro_test!(tok_expands_to_identifier, &quot;Hello&quot; =&gt; TokenKind::Identifier(&quot;Hello&quot;.to_string()));
+}
+#}</code></pre></pre>
+<p>When used this way, macros have a tendency to give horrible error messages.
+To make sure this won't happen I tried to pass in a non-existent <code>TokenKind</code>
+variant and see what happens:</p>
+<pre><code>error[E0425]: cannot find value `DoesntExist` in this scope
+--&gt; src/parse/macros.rs:41:55
+|
+41 |     token_macro_test!(use_tok_with_nonexistent_thing, DoesntExist =&gt; TokenKind::Dot);
+|                                                          ^^^^^^^^^^^ not found in this scope
+</code></pre>
+<p>I'm fairly happy with the results.</p>
+<a class="header" href="print.html#parsing" id="parsing"><h1>Parsing</h1></a>
+<p>Now that we've turned the source code into tokens we can construct a more
+computer-friendly representation for the program. This representation is
+often called an <em>Abstract Syntax Tree</em> because it's a high-level tree
+datastructure which reflects a program's syntax.</p>
+<a class="header" href="print.html#the-general-idea" id="the-general-idea"><h2>The General Idea</h2></a>
+<p>Before we start with parsing, lets look at an example chunk of Delphi code
+to get a feel for the language. A <em>unit file</em> is the basic building block of a
+Delphi program, analogous to a <code>*.c</code> file. The <code>Main()</code> function is typically
+elsewhere in GUI programs because an application's endpoint is typically
+managed by the GUI framework or IDE.</p>
+<pre><code class="language-delphi">unit Unit1;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
+  Dialogs, StdCtrls;
+
+type
+  TForm1 = class(TForm)
+    Label1: TLabel;      // The label we have added
+    Button1: TButton;    // The button we have added
+    procedure Button1Click(Sender: TObject);
+  private
+    { private declarations }
+  public
+    { public declarations }
+  end;
+
+var
+  Form1: TForm1;
+
+implementation
+
+{$R *.dfm}
+
+// The button action we have added
+procedure TForm1.Button1Click(Sender: TObject);
+begin
+  Label1.Caption := 'Hello World';    // Label changed when button pressed
+end;
+
+end.
+</code></pre>
+<p>At a very high level, a unit file consists of a <code>unit</code> statement declaring the
+unit's name, followed by the <code>interface</code> (kinda like a <code>*.h</code> file) then an
+<code>implementation</code> section, before ending with a <code>end.</code>.</p>
+<p>There's a formal language used to express a language's grammar called
+<em>Backus–Naur form</em>. That previous paragraph would translate to something like
+the following:</p>
+<pre><code class="language-ebnf">file        = unit_decl interface implementation &quot;end.&quot;;
+unit_decl   = &quot;unit&quot; unit_name SEMICOLON;
+unit_name   = WORD;
+interface   = &quot;interface&quot; uses types vars;
+uses        = &quot;uses&quot; WORD (&quot;,&quot; WORD)* SEMICOLON
+             | ε;
+types       = &quot;type&quot; type_decl*;
+vars        = &quot;var&quot; var_decl*;
+</code></pre>
+<p>With the terminals (<code>WORD</code>, <code>SEMICOLON</code>, and friends) being their usual selves.</p>
+<p>Delphi has a pretty simple syntax, so we're going to use a standard recursive
+descent parser. This is just an object which has a method roughly corresponding
+to each rule in the language's grammar.</p>
+<a class="header" href="print.html#the-parser-object" id="the-parser-object"><h2>The Parser Object</h2></a>
+<p>As usual, before we can do anything else we're going to have to import a couple
+dependencies.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+use std::rc::Rc;
+
+use lex::{Token, TokenKind};
+use codemap::{Span, FileMap};
+use parse::ast::{Literal, LiteralKind, Ident, DottedIdent};
+use errors::*;
+#}</code></pre></pre>
+<p>The <code>Parser</code> itself just contains the tokens and their corresponding <code>FileMap</code>.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// A parser for turning a stream of tokens into a Abstract Syntax Tree.
+#[derive(Debug)]
+pub struct Parser {
+  tokens: Vec&lt;Token&gt;,
+  filemap: Rc&lt;FileMap&gt;,
+  current_index: usize,
+}
+
+impl Parser {
+  /// Create a new parser.
+  pub fn new(tokens: Vec&lt;Token&gt;, filemap: Rc&lt;FileMap&gt;) -&gt; Parser {
+    let current_index = 0;
+    Parser { tokens, filemap, current_index }
+  }
+
+  /// Peek at the current token.
+  fn peek(&amp;self) -&gt; Option&lt;&amp;TokenKind&gt; {
+    self.tokens.get(self.current_index).map(|t| &amp;t.kind)
+  }
+
+  /// Get the current token, moving the index along one.
+  fn next(&amp;mut self) -&gt; Option&lt;&amp;Token&gt; {
+    let tok = self.tokens.get(self.current_index);
+
+    if tok.is_some() {
+      self.current_index += 1;
+    }
+
+    tok
+  }
+}
+#}</code></pre></pre>
+<p>We'll implement the various grammar rules from the bottom up. Meaning we'll
+start with the very basics like expressions, then build things up until we
+get to the overall program.</p>
+<p>First up lets have a go at parsing <code>Literals</code>. We do it in two steps, first
+you peek at the next token to make sure it's a kind you expect, then you
+unpack the token and convert it into it's equivalent AST node. A lot of the
+pattern matching boilerplate can be minimised with the judicious use of macros.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl Parser {
+  fn parse_literal(&amp;mut self) -&gt; Result&lt;Literal&gt; {
+    match self.peek() {
+      Some(&amp;TokenKind::Integer(_)) | 
+      Some(&amp;TokenKind::Decimal(_)) | 
+      Some(&amp;TokenKind::QuotedString(_)) =&gt; {},
+      Some(_) =&gt; bail!(&quot;Expected a literal&quot;),
+      None =&gt; bail!(ErrorKind::UnexpectedEOF),
+    };
+
+    let next = self.next().expect(&quot;unreachable&quot;);
+    let lit_kind = match next.kind {
+      TokenKind::Integer(i) =&gt; LiteralKind::Integer(i),
+      TokenKind::Decimal(d) =&gt; LiteralKind::Decimal(d),
+      TokenKind::QuotedString(ref s) =&gt; LiteralKind::String(s.clone()),
+      ref other =&gt; panic!(&quot;Unreachable token kind: {:?}&quot;, other),
+    };
+
+    Ok(Literal {
+      span: next.span,
+      kind: lit_kind
+    })
+  }
+}
+#}</code></pre></pre>
+<p>Like the tokenizing module, we're going to need to write lots of tests to
+check our parser recognises things as we expect them to. Unfortunately the
+types and syntactic structures used will be slightly different, so we'll
+use macros to abstract away a lot of the boilerplate.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+macro_rules! parser_test {
+  ($name:ident, $method:ident, $src:expr =&gt; $should_be:expr) =&gt;  {
+    #[cfg(test)]
+    #[test]
+    fn $name() {
+      // create a codemap and tokenize our input string
+      let mut codemap = $crate::codemap::CodeMap::new();
+      let filemap = codemap.insert_file(&quot;dummy.pas&quot;, $src);
+      let tokenized = $crate::lex::tokenize(filemap.contents())
+        .chain_err(|| &quot;Tokenizing failed&quot;)
+        .unwrap();
+      let tokens = filemap.register_tokens(tokenized);
+
+      let should_be = $should_be;
+
+      let mut parser = Parser::new(tokens, filemap);
+      let got = parser.$method().unwrap();
+
+      assert_eq!(got, should_be);
+    }
+  }
+}
+#}</code></pre></pre>
+<p>Now we have our basic test harness set up, lets see if literal parsing works.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+parser_test!(integer_literal, parse_literal, &quot;123&quot; =&gt; LiteralKind::Integer(123));
+parser_test!(parse_float_literal, parse_literal, &quot;12.3&quot; =&gt; LiteralKind::Decimal(12.3));
+// TODO: re-enable this when string parsing is implemented
+// parser_test!(parse_string_literal, parse_literal, &quot;'12.3'&quot; =&gt; LiteralKind::String(&quot;12.3&quot;.to_string()));
+#}</code></pre></pre>
+<p>Another easy thing to implement is parsing identifiers and dotted identifiers
+(e.g. <code>foo.bar.baz</code>). To recognise a dotted identifier you first look for one
+identifier, then keep trying to take a pair of dots and idents until there are
+no more.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl Parser {
+  fn parse_ident(&amp;mut self) -&gt; Result&lt;Ident&gt; {
+    match self.peek() {
+      Some(&amp;TokenKind::Identifier(_)) =&gt; {},
+      _ =&gt; bail!(&quot;Expected an identifier&quot;),
+    }
+
+    let next = self.next().unwrap();
+
+    if let TokenKind::Identifier(ref ident) = next.kind {
+      Ok(Ident {
+        span: next.span,
+        name: ident.clone(),
+      })
+    } else {
+      unreachable!()
+    }
+  }
+
+  fn parse_dotted_ident(&amp;mut self) -&gt; Result&lt;DottedIdent&gt; {
+    let first = self.parse_ident()?;
+    let mut parts = vec![first];
+
+    while self.peek() == Some(&amp;TokenKind::Dot) {
+      let _ = self.next();
+      let next = self.parse_ident()?;
+      parts.push(next);
+    }
+
+    // the span for a dotted ident should be the union of the spans for
+    // each of its components.
+    let span = parts.iter()
+                    .skip(1)
+                    .fold(parts[0].span, |l, r| self.filemap.merge(l, r.span));
+
+    Ok(DottedIdent { span, parts })    
+  }
+}
+#}</code></pre></pre>
+<p>Using our <code>parser_test!()</code> macro makes these a piece of cake to test.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+parser_test!(parse_a_basic_ident, parse_ident, &quot;foo&quot; =&gt; &quot;foo&quot;);
+parser_test!(parse_a_dotted_ident, parse_dotted_ident, &quot;foo.bar.baz&quot; =&gt; [&quot;foo&quot;, &quot;bar&quot;, &quot;baz&quot;]);
+parser_test!(parse_a_single_ident_as_dotted, parse_dotted_ident, &quot;foo&quot; =&gt; [&quot;foo&quot;]);
+#}</code></pre></pre>
+<a class="header" href="print.html#the-abstract-syntax-tree" id="the-abstract-syntax-tree"><h1>The Abstract Syntax Tree</h1></a>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#![allow(missing_docs)]
+#fn main() {
+use codemap::Span;
+#}</code></pre></pre>
+<p>The most basic element of the AST is a <code>Literal</code>. These are either integer,
+float, or string literals.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = &quot;type&quot;)]
+pub enum LiteralKind {
+    Integer(usize),
+    Decimal(f64),
+    String(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Literal {
+    pub span: Span,
+    pub kind: LiteralKind,
+}
+#}</code></pre></pre>
+<p>We also want to add a couple <code>From</code> impls so creating a <code>LiteralKind</code> is easy
+to do.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl From&lt;usize&gt; for LiteralKind {
+    fn from(other: usize) -&gt; LiteralKind {
+        LiteralKind::Integer(other)
+    }
+}
+
+impl From&lt;f64&gt; for LiteralKind {
+    fn from(other: f64) -&gt; LiteralKind {
+        LiteralKind::Decimal(other)
+    }
+}
+
+impl PartialEq&lt;LiteralKind&gt; for Literal {
+    fn eq(&amp;self, other: &amp;LiteralKind) -&gt; bool {
+        &amp;self.kind == other
+    }
+}
+#}</code></pre></pre>
+<p>We also want to deal with identifiers and dot-separated identifiers.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Ident {
+    pub span: Span,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DottedIdent {
+    pub span: Span,
+    pub parts: Vec&lt;Ident&gt;,
+}
+
+impl&lt;'a&gt; PartialEq&lt;&amp;'a str&gt; for Ident {
+    fn eq(&amp;self, other: &amp;&amp;str) -&gt; bool {
+        &amp;self.name == other
+    }
+}
+
+impl&lt;'a, T: AsRef&lt;[&amp;'a str]&gt;&gt; PartialEq&lt;T&gt; for DottedIdent {
+    fn eq(&amp;self, other: &amp;T) -&gt; bool {
+        self.parts.iter()
+            .zip(other.as_ref().iter())
+            .all(|(l, r)| l == r)
+    }
+}
+#}</code></pre></pre>
+<a class="header" href="print.html#type-checking-and-lowering-to-hir" id="type-checking-and-lowering-to-hir"><h1>Type Checking and Lowering to HIR</h1></a>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+//! Typechecking and basic control flow graph generation.
+#}</code></pre></pre>
+<p>TODO: Implement some basic type-checking and do &quot;lowering&quot; from the AST to a HIR.</p>
+<a class="header" href="print.html#static-analysis" id="static-analysis"><h1>Static Analysis</h1></a>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+//! Static analysis passes (i.e. the whole point).
+#}</code></pre></pre>
+<p>TODO: Create a trait for lints and passes.</p>
+<a class="header" href="print.html#the-driver" id="the-driver"><h1>The Driver</h1></a>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+
+#fn main() {
+use codemap::{CodeMap, FileMap, Span};
+#}</code></pre></pre>
+<p>The <code>Driver</code> contains a <code>CodeMap</code> and various other configuration settings
+required to run the analysis.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// The driver is in charge of orchestrating the whole analysis process and 
+/// making sure all the bits and pieces integrate nicely.
+#[derive(Debug)]
+pub struct Driver {
+    codemap: CodeMap,
+}
+#}</code></pre></pre>
+<p>He has various methods to allow users to add files to be analysed, as well as
+other convenience methods for setting things up.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl Driver {
+    /// Create a new driver.
+    pub fn new() -&gt; Driver {
+        Driver {
+            codemap: CodeMap::new(),
+        }
+    }
+
+    /// Get access to the driver's `CodeMap`.
+    pub fn codemap(&amp;mut self) -&gt; &amp;mut CodeMap {
+        &amp;mut self.codemap
+    }
+}
+
+impl Default for Driver {
+    fn default() -&gt; Driver {
+        Driver::new()
+    }
+}
+#}</code></pre></pre>
+<a class="header" href="print.html#error-handling" id="error-handling"><h1>Error Handling</h1></a>
+<p>This is just some code to hook <code>error-chain</code> up so we can use it for internal
+errors. Feel free to skip past this.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+//! Types and traits used for internal errors.
+
+error_chain!{
+    errors {
+        /// Got to the end of the input stream but was expecting more.
+        UnexpectedEOF {
+            display(&quot;Unexpected EOF&quot;)
+            description(&quot;Unexpected EOF&quot;)
+        }
+
+        /// Reached an unknown character while lexing.
+        UnknownCharacter(ch: char) {
+            display(&quot;Unknown Character, {:?}&quot;, ch)
+            description(&quot;Unknown Character&quot;)
+        }
+
+        /// A message which corresponds to some location in the source code.
+        MessageWithLocation(loc: usize, msg: &amp;'static str) {
+            display(&quot;{} at {}&quot;, msg, loc)
+            description(&quot;Custom Error&quot;)
+        }
+    }
+
+    foreign_links {
+        Io(::std::io::Error) #[doc = &quot;Wrapper around a `std::io::Error`&quot;];
+        Utf8(::std::str::Utf8Error) #[doc = &quot;An error parsing data as UTF-8&quot;];
+        FloatParsing(::std::num::ParseFloatError) #[doc = &quot;A float parsing error&quot;];
+        IntParsing(::std::num::ParseIntError) #[doc = &quot;An integer parsing error&quot;];
+        
+    }
+}
+#}</code></pre></pre>
+<a class="header" href="print.html#the-codemap" id="the-codemap"><h1>The CodeMap</h1></a>
+<p>A <code>CodeMap</code> gives you a central mapping from spans to their location in the
+group of files being analysed.</p>
+<p>As usual, lets add in a couple imports and module-level documentation.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+//! A mapping from arbitrary locations and sections of source code to their
+//! contents.
+
+use std::collections::HashMap;
+use std::ops::Range;
+use std::rc::Rc;
+use std::cmp;
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use lex::{Token, TokenKind};
+#}</code></pre></pre>
+<p>We start off with a <code>Span</code>. This is really just a wrapper around an integer,
+with the assumption that a span will <strong>always</strong> correspond to something in
+the <code>CodeMap</code>. This means using a span from one <code>CodeMap</code> with another will
+result in a panic if you are lucky, or silently give you garbage.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// A unique identifier pointing to a substring in some file.
+///
+/// To get back the original string this points to you'll need to look it up
+/// in a `CodeMap` or `FileMap`. 
+#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
+pub struct Span(usize);
+
+impl Span {
+    /// Returns the special &quot;dummy&quot; span, which matches anything. This should
+    /// only be used internally to make testing easier.
+    pub(crate) fn dummy() -&gt; Span {
+        Span(0)
+    }
+}
+#}</code></pre></pre>
+<p>For our purposes, the <code>CodeMap</code> will just contain a list of <code>FileMap</code>s. These
+keep track of their name, contents, and the mapping of spans to locations in
+that content.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// A mapping of `Span`s to the files in which they are located.
+#[derive(Debug)]
+pub struct CodeMap {
+    next_id: Rc&lt;AtomicUsize&gt;,
+    files: Vec&lt;Rc&lt;FileMap&gt;&gt;,
+}
+
+/// A mapping which keeps track of a file's contents and allows you to cheaply
+/// access substrings of the original content.
+#[derive(Clone, Debug)]
+pub struct FileMap {
+    name: String,
+    contents: String,
+    next_id: Rc&lt;AtomicUsize&gt;,
+    items: RefCell&lt;HashMap&lt;Span, Range&lt;usize&gt;&gt;&gt;
+}
+#}</code></pre></pre>
+<p>The codemap has a couple useful methods for adding new files and looking up the
+string corresponding to a span.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl CodeMap {
+    /// Create a new, empty `CodeMap`.
+    pub fn new() -&gt; CodeMap {
+        let next_id = Rc::new(AtomicUsize::new(1));
+        let files = Vec::new();
+        CodeMap { next_id, files }
+    }
+
+    /// Add a new file to the `CodeMap` and get back a reference to it.
+    pub fn insert_file&lt;C, F&gt;(&amp;mut self, filename: F, contents: C) -&gt; Rc&lt;FileMap&gt; 
+    where F: Into&lt;String&gt;,
+          C: Into&lt;String&gt;,
+    {
+        let filemap = FileMap {
+            name: filename.into(),
+            contents: contents.into(),
+            items: RefCell::new(HashMap::new()),
+            next_id: Rc::clone(&amp;self.next_id),
+        };
+        let fm = Rc::new(filemap);
+        self.files.push(Rc::clone(&amp;fm));
+
+        fm
+    }
+
+    /// Get the substring that this `Span` corresponds to.
+    pub fn lookup(&amp;self, span: Span) -&gt; &amp;str {
+        for filemap in &amp;self.files {
+            if let Some(substr) = filemap.lookup(span) {
+                return substr;
+            }
+        }
+
+        panic!(&quot;Tried to lookup {:?} but it wasn't in any \
+            of the FileMaps... This is a bug!&quot;, span)
+    }
+
+    /// The files that this `CodeMap` contains.
+    pub fn files(&amp;self) -&gt; &amp;[Rc&lt;FileMap&gt;] {
+        self.files.as_slice()
+    }
+}
+
+impl Default for CodeMap {
+    fn default() -&gt; CodeMap {
+        CodeMap::new()
+    }
+}
+#}</code></pre></pre>
+<p>You may have noticed that <code>FileMap</code> contains a <code>RefCell&lt;HashMap&lt;_&gt;&gt;</code>. This is
+because we want to pass around multiple pointers to a file mapping, yet still
+be able to add new spans if we want to. It also contains a reference to the
+parent <code>CodeMap</code>'s counter so when we insert new spans into the <code>FileMap</code>
+they'll still get globally unique IDs.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl FileMap {
+    /// Get the name of this `FileMap`.
+    pub fn filename(&amp;self) -&gt; &amp;str {
+        &amp;self.name
+    }
+
+    /// Get the entire content of this file.
+    pub fn contents(&amp;self) -&gt; &amp;str {
+        &amp;self.contents
+    }
+
+    /// Lookup a span in this `FileMap`.
+    ///
+    /// # Panics
+    ///
+    /// If the `FileMap`'s `items` hashmap contains a span, but that span 
+    /// **doesn't** point to a valid substring this will panic. If you ever
+    /// get into a situation like this then things are almost certainly FUBAR.
+    pub fn lookup(&amp;self, span: Span) -&gt; Option&lt;&amp;str&gt; {
+        let range = match self.range_of(span) {
+            Some(r) =&gt; r,
+            None =&gt; return None,
+        };
+
+        match self.contents.get(range.clone()) {
+            Some(substr) =&gt; Some(substr),
+            None =&gt; panic!(&quot;FileMap thinks it contains {:?}, \
+                but the range ({:?}) doesn't point to anything valid!&quot;, span, range),
+        }
+    }
+
+    /// Get the range corresponding to this span.
+    pub fn range_of(&amp;self, span: Span) -&gt; Option&lt;Range&lt;usize&gt;&gt; {
+        self.items.borrow().get(&amp;span).cloned() 
+    }
+}
+#}</code></pre></pre>
+<p>Users can freely add new spans to a <code>FileMap</code>, to do this we'll take in the
+start and end indices, create a new span ID by incrementing our counter, then
+we insert the new span and range into the <code>items</code>. In debug builds we'll do
+bounds checks, but it's an assumption that the <code>start</code> and <code>end</code> indices are
+both within bounds, and lie on valid codepoint boundaries.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl FileMap {
+    /// Ask the `FileMap` to give you the span corresponding to the half-open
+    /// interval `[start, end)`.
+    ///
+    /// # Panics
+    ///
+    /// In debug mode, this will panic if either `start` or `end` are outside
+    /// the source code or if they don't lie on a codepoint boundary.
+    ///
+    /// It is assumed that the `start` and `indices` were originally obtained
+    /// from the file's contents.
+    pub fn insert_span(&amp;self, start: usize, end: usize) -&gt; Span {
+        debug_assert!(self.contents.is_char_boundary(start), 
+            &quot;Start doesn't lie on a char boundary&quot;);
+        debug_assert!(self.contents.is_char_boundary(end), 
+            &quot;End doesn't lie on a char boundary&quot;);
+        debug_assert!(start &lt; self.contents.len(), 
+            &quot;Start lies outside the content string&quot;);
+        debug_assert!(end &lt;= self.contents.len(), 
+            &quot;End lies outside the content string&quot;);
+
+        let range = start..end;
+
+        if let Some(existing) = self.reverse_lookup(&amp;range) {
+            return existing;
+        }
+
+        let span_id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let span = Span(span_id);
+
+        self.items.borrow_mut().insert(span, range);
+        span
+    }
+
+    /// We don't want to go and add duplicate spans unnecessarily so we 
+    /// iterate through all existing ranges to see if this one already
+    /// exists. 
+    fn reverse_lookup(&amp;self, needle: &amp;Range&lt;usize&gt;) -&gt; Option&lt;Span&gt; {
+        self.items.borrow()
+            .iter()
+            .find(|&amp;(_, range)| range == needle)
+            .map(|(span, _)| span)
+            .cloned()
+    }
+
+    /// Merge two spans to get the span which includes both.
+    ///
+    /// As usual, the constraints from `insert_span()` also apply here. If
+    /// you try to enter two spans from different `FileMap`s, it'll panic.
+    pub fn merge(&amp;self, first: Span, second: Span) -&gt; Span {
+        let range_1 = self.range_of(first).expect(&quot;Can only merge spans from the same FileMap&quot;);
+        let range_2 = self.range_of(second).expect(&quot;Can only merge spans from the same FileMap&quot;);
+
+        let start = cmp::min(range_1.start, range_2.start);
+        let end = cmp::max(range_1.end, range_2.end);
+
+        self.insert_span(start, end)
+    }
+}
+#}</code></pre></pre>
+<p>To help after the tokenizing step, lets add a method which will take a bunch
+of tokens and register them with a <code>FileMap</code>. The same caveats as with
+<code>insert_span()</code> will apply here.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl FileMap {
+    /// Register a set of tokenized inputs and turn them into a proper stream
+    /// of tokens. Note that all the caveats from `insert_span()` also apply 
+    /// here.
+    pub fn register_tokens(&amp;self, tokens: Vec&lt;(TokenKind, usize, usize)&gt;) -&gt; Vec&lt;Token&gt; {
+        let mut registered = Vec::new();
+
+        for (kind, start, end) in tokens {
+            let span = self.insert_span(start, end);
+            let token = Token::new(span, kind);
+            registered.push(token);
+        }
+
+        registered
+    }
+}
+#}</code></pre></pre>
+<p>To test that our <code>CodeMap</code> and <code>FileMap</code> behave as we expect them to, let's
+create some dummy &quot;files&quot; and try to create spans in them.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn insert_a_file_into_a_codemap() {
+        let mut map = CodeMap::new();
+        let filename = &quot;foo.rs&quot;;
+        let content = &quot;Hello World!&quot;;
+
+        assert_eq!(map.files.len(), 0);
+        let fm = map.insert_file(filename, content);
+
+        assert_eq!(fm.filename(), filename);
+        assert_eq!(fm.contents(), content);
+        assert_eq!(map.files.len(), 1);
+    }
+
+    #[test]
+    fn get_span_for_substring() {
+        let mut map = CodeMap::new();
+        let src = &quot;Hello World!&quot;;
+        let fm = map.insert_file(&quot;foo.rs&quot;, src);
+
+        let start = 2;
+        let end = 5;
+        let should_be = &amp;src[start..end];
+
+        let span = fm.insert_span(start, end);
+        let got = fm.lookup(span).unwrap();
+        assert_eq!(got, should_be);
+        assert_eq!(fm.range_of(span).unwrap(), start..end);
+
+        let got_from_codemap = map.lookup(span);
+        assert_eq!(got_from_codemap, should_be);
+    }
+
+    #[test]
+    fn spans_for_different_ranges_are_always_unique() {
+        let mut map = CodeMap::new();
+        let src = &quot;Hello World!&quot;;
+        let fm = map.insert_file(&quot;foo.rs&quot;, src);
+
+        let mut spans = Vec::new();
+
+        for start in 0..src.len() {
+            for end in start..src.len() {
+                let span = fm.insert_span(start, end);
+                assert!(!spans.contains(&amp;span), 
+                    &quot;{:?} already contains {:?} ({}..{})&quot;, 
+                    spans, span, start, end);
+                assert!(span != Span::dummy());
+
+                spans.push(span);
+            }
+        }
+    }
+
+    #[test]
+    fn spans_for_identical_ranges_are_identical() {
+        let mut map = CodeMap::new();
+        let src = &quot;Hello World!&quot;;
+        let fm = map.insert_file(&quot;foo.rs&quot;, src);
+
+        let start = 0;
+        let end = 5;
+
+        let span_1 = fm.insert_span(start, end);
+        let span_2 = fm.insert_span(start, end);
+
+        assert_eq!(span_1, span_2);
+    }
+
+    #[test]
+    fn join_multiple_spans() {
+        let mut map = CodeMap::new();
+        let src = &quot;Hello World!&quot;;
+        let fm = map.insert_file(&quot;foo.rs&quot;, src);
+
+        let span_1 = fm.insert_span(0, 2);
+        let span_2 = fm.insert_span(3, 8);
+
+        let joined = fm.merge(span_1, span_2);
+        let equivalent_range = fm.range_of(joined).unwrap();
+
+        assert_eq!(equivalent_range.start, 0);
+        assert_eq!(equivalent_range.end, 8);
+    }
+}
+#}</code></pre></pre>
+
+                </div>
+
+                <!-- Mobile navigation buttons -->
+                
+
+                
+
+            </div>
+
+            
+
+            
+
+        </div>
+
+
+        <!-- Local fallback for Font Awesome -->
+        <script>
+            if ($(".fa").css("font-family") !== "FontAwesome") {
+                $('<link rel="stylesheet" type="text/css" href="_FontAwesome/css/font-awesome.css">').prependTo('head');
+            }
+        </script>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        
+
+        
+        <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+        ga('create', 'UA-78714693-2', 'auto');
+        ga('send', 'pageview');
+        </script>
+        
+
+        
+
+        
+        <script>
+            $(document).ready(function() {
+                window.print();
+            })
+        </script>
+        
+
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+    </body>
+</html>

@@ -1,0 +1,493 @@
+<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>The Code Map - Create a Static Analyser in Rust</title>
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <base href="">
+
+        <link rel="stylesheet" href="book.css">
+        <link href="https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800" rel="stylesheet" type="text/css">
+        <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro:500" rel="stylesheet" type="text/css">
+
+        <link rel="shortcut icon" href="favicon.png">
+
+        <!-- Font Awesome -->
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme -->
+        
+
+        
+
+        <!-- Fetch Clipboard.js from CDN but have a local fallback -->
+        <script src="https://cdn.jsdelivr.net/clipboard.js/1.6.1/clipboard.min.js"></script>
+        <script>
+            if (typeof Clipboard == 'undefined') {
+                document.write(unescape("%3Cscript src='clipboard.min.js'%3E%3C/script%3E"));
+            }
+        </script>
+
+        <!-- Fetch JQuery from CDN but have a local fallback -->
+        <script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+        <script>
+            if (typeof jQuery == 'undefined') {
+                document.write(unescape("%3Cscript src='jquery.js'%3E%3C/script%3E"));
+            }
+        </script>
+
+        <!-- Fetch store.js from local - TODO add CDN when 2.x.x is available on cdnjs -->
+        <script src="store.js"></script>
+
+        <!-- Custom JS script -->
+        
+
+    </head>
+    <body class="light">
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme = store.get('mdbook-theme');
+            if (theme === null || theme === undefined) { theme = 'light'; }
+            $('body').removeClass().addClass(theme);
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var sidebar = store.get('mdbook-sidebar');
+            if (sidebar === "hidden") { $("html").addClass("sidebar-hidden") }
+            else if (sidebar === "visible") { $("html").addClass("sidebar-visible") }
+        </script>
+
+        <div id="sidebar" class="sidebar">
+            <ul class="chapter"><li class="affix"><a href="./lib.html">Overview</a></li><li class="spacer"></li><li><a href="./lex.html"><strong>1.</strong> Lexing</a></li><li><a href="./parse/mod.html"><strong>2.</strong> Parsing</a></li><li><ul class="section"><li><a href="./parse/macros.html"><strong>2.1.</strong> Helper Macros</a></li><li><a href="./parse/parser.html"><strong>2.2.</strong> The Parser</a></li><li><a href="./parse/ast.html"><strong>2.3.</strong> The Abstract Syntax Tree</a></li></ul></li><li><a href="./lowering.html"><strong>3.</strong> Type Checking and Lowering</a></li><li><a href="./analysis.html"><strong>4.</strong> Static Analysis</a></li><li><a href="./driver.html"><strong>5.</strong> The Driver</a></li><li class="spacer"></li><li class="affix"><a href="./errors.html">Error Handling</a></li><li class="affix"><a href="./codemap.html" class="active">The Code Map</a></li></ul>
+        </div>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page" tabindex="-1">
+                <div id="menu-bar" class="menu-bar">
+                    <div class="left-buttons">
+                        <i id="sidebar-toggle" class="fa fa-bars"></i>
+                        <i id="theme-toggle" class="fa fa-paint-brush"></i>
+                    </div>
+
+                    <h1 class="menu-title">Create a Static Analyser in Rust</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html">
+                            <i id="print-button" class="fa fa-print" title="Print this book"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <div id="content" class="content">
+                    <a class="header" href="./codemap.html#the-codemap" id="the-codemap"><h1>The CodeMap</h1></a>
+<p>A <code>CodeMap</code> gives you a central mapping from spans to their location in the
+group of files being analysed.</p>
+<p>As usual, lets add in a couple imports and module-level documentation.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+//! A mapping from arbitrary locations and sections of source code to their
+//! contents.
+
+use std::collections::HashMap;
+use std::ops::Range;
+use std::rc::Rc;
+use std::cmp;
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use lex::{Token, TokenKind};
+#}</code></pre></pre>
+<p>We start off with a <code>Span</code>. This is really just a wrapper around an integer,
+with the assumption that a span will <strong>always</strong> correspond to something in
+the <code>CodeMap</code>. This means using a span from one <code>CodeMap</code> with another will
+result in a panic if you are lucky, or silently give you garbage.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// A unique identifier pointing to a substring in some file.
+///
+/// To get back the original string this points to you'll need to look it up
+/// in a `CodeMap` or `FileMap`. 
+#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
+pub struct Span(usize);
+
+impl Span {
+    /// Returns the special &quot;dummy&quot; span, which matches anything. This should
+    /// only be used internally to make testing easier.
+    pub(crate) fn dummy() -&gt; Span {
+        Span(0)
+    }
+}
+#}</code></pre></pre>
+<p>For our purposes, the <code>CodeMap</code> will just contain a list of <code>FileMap</code>s. These
+keep track of their name, contents, and the mapping of spans to locations in
+that content.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// A mapping of `Span`s to the files in which they are located.
+#[derive(Debug)]
+pub struct CodeMap {
+    next_id: Rc&lt;AtomicUsize&gt;,
+    files: Vec&lt;Rc&lt;FileMap&gt;&gt;,
+}
+
+/// A mapping which keeps track of a file's contents and allows you to cheaply
+/// access substrings of the original content.
+#[derive(Clone, Debug)]
+pub struct FileMap {
+    name: String,
+    contents: String,
+    next_id: Rc&lt;AtomicUsize&gt;,
+    items: RefCell&lt;HashMap&lt;Span, Range&lt;usize&gt;&gt;&gt;
+}
+#}</code></pre></pre>
+<p>The codemap has a couple useful methods for adding new files and looking up the
+string corresponding to a span.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl CodeMap {
+    /// Create a new, empty `CodeMap`.
+    pub fn new() -&gt; CodeMap {
+        let next_id = Rc::new(AtomicUsize::new(1));
+        let files = Vec::new();
+        CodeMap { next_id, files }
+    }
+
+    /// Add a new file to the `CodeMap` and get back a reference to it.
+    pub fn insert_file&lt;C, F&gt;(&amp;mut self, filename: F, contents: C) -&gt; Rc&lt;FileMap&gt; 
+    where F: Into&lt;String&gt;,
+          C: Into&lt;String&gt;,
+    {
+        let filemap = FileMap {
+            name: filename.into(),
+            contents: contents.into(),
+            items: RefCell::new(HashMap::new()),
+            next_id: Rc::clone(&amp;self.next_id),
+        };
+        let fm = Rc::new(filemap);
+        self.files.push(Rc::clone(&amp;fm));
+
+        fm
+    }
+
+    /// Get the substring that this `Span` corresponds to.
+    pub fn lookup(&amp;self, span: Span) -&gt; &amp;str {
+        for filemap in &amp;self.files {
+            if let Some(substr) = filemap.lookup(span) {
+                return substr;
+            }
+        }
+
+        panic!(&quot;Tried to lookup {:?} but it wasn't in any \
+            of the FileMaps... This is a bug!&quot;, span)
+    }
+
+    /// The files that this `CodeMap` contains.
+    pub fn files(&amp;self) -&gt; &amp;[Rc&lt;FileMap&gt;] {
+        self.files.as_slice()
+    }
+}
+
+impl Default for CodeMap {
+    fn default() -&gt; CodeMap {
+        CodeMap::new()
+    }
+}
+#}</code></pre></pre>
+<p>You may have noticed that <code>FileMap</code> contains a <code>RefCell&lt;HashMap&lt;_&gt;&gt;</code>. This is
+because we want to pass around multiple pointers to a file mapping, yet still
+be able to add new spans if we want to. It also contains a reference to the
+parent <code>CodeMap</code>'s counter so when we insert new spans into the <code>FileMap</code>
+they'll still get globally unique IDs.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl FileMap {
+    /// Get the name of this `FileMap`.
+    pub fn filename(&amp;self) -&gt; &amp;str {
+        &amp;self.name
+    }
+
+    /// Get the entire content of this file.
+    pub fn contents(&amp;self) -&gt; &amp;str {
+        &amp;self.contents
+    }
+
+    /// Lookup a span in this `FileMap`.
+    ///
+    /// # Panics
+    ///
+    /// If the `FileMap`'s `items` hashmap contains a span, but that span 
+    /// **doesn't** point to a valid substring this will panic. If you ever
+    /// get into a situation like this then things are almost certainly FUBAR.
+    pub fn lookup(&amp;self, span: Span) -&gt; Option&lt;&amp;str&gt; {
+        let range = match self.range_of(span) {
+            Some(r) =&gt; r,
+            None =&gt; return None,
+        };
+
+        match self.contents.get(range.clone()) {
+            Some(substr) =&gt; Some(substr),
+            None =&gt; panic!(&quot;FileMap thinks it contains {:?}, \
+                but the range ({:?}) doesn't point to anything valid!&quot;, span, range),
+        }
+    }
+
+    /// Get the range corresponding to this span.
+    pub fn range_of(&amp;self, span: Span) -&gt; Option&lt;Range&lt;usize&gt;&gt; {
+        self.items.borrow().get(&amp;span).cloned() 
+    }
+}
+#}</code></pre></pre>
+<p>Users can freely add new spans to a <code>FileMap</code>, to do this we'll take in the
+start and end indices, create a new span ID by incrementing our counter, then
+we insert the new span and range into the <code>items</code>. In debug builds we'll do
+bounds checks, but it's an assumption that the <code>start</code> and <code>end</code> indices are
+both within bounds, and lie on valid codepoint boundaries.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl FileMap {
+    /// Ask the `FileMap` to give you the span corresponding to the half-open
+    /// interval `[start, end)`.
+    ///
+    /// # Panics
+    ///
+    /// In debug mode, this will panic if either `start` or `end` are outside
+    /// the source code or if they don't lie on a codepoint boundary.
+    ///
+    /// It is assumed that the `start` and `indices` were originally obtained
+    /// from the file's contents.
+    pub fn insert_span(&amp;self, start: usize, end: usize) -&gt; Span {
+        debug_assert!(self.contents.is_char_boundary(start), 
+            &quot;Start doesn't lie on a char boundary&quot;);
+        debug_assert!(self.contents.is_char_boundary(end), 
+            &quot;End doesn't lie on a char boundary&quot;);
+        debug_assert!(start &lt; self.contents.len(), 
+            &quot;Start lies outside the content string&quot;);
+        debug_assert!(end &lt;= self.contents.len(), 
+            &quot;End lies outside the content string&quot;);
+
+        let range = start..end;
+
+        if let Some(existing) = self.reverse_lookup(&amp;range) {
+            return existing;
+        }
+
+        let span_id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let span = Span(span_id);
+
+        self.items.borrow_mut().insert(span, range);
+        span
+    }
+
+    /// We don't want to go and add duplicate spans unnecessarily so we 
+    /// iterate through all existing ranges to see if this one already
+    /// exists. 
+    fn reverse_lookup(&amp;self, needle: &amp;Range&lt;usize&gt;) -&gt; Option&lt;Span&gt; {
+        self.items.borrow()
+            .iter()
+            .find(|&amp;(_, range)| range == needle)
+            .map(|(span, _)| span)
+            .cloned()
+    }
+
+    /// Merge two spans to get the span which includes both.
+    ///
+    /// As usual, the constraints from `insert_span()` also apply here. If
+    /// you try to enter two spans from different `FileMap`s, it'll panic.
+    pub fn merge(&amp;self, first: Span, second: Span) -&gt; Span {
+        let range_1 = self.range_of(first).expect(&quot;Can only merge spans from the same FileMap&quot;);
+        let range_2 = self.range_of(second).expect(&quot;Can only merge spans from the same FileMap&quot;);
+
+        let start = cmp::min(range_1.start, range_2.start);
+        let end = cmp::max(range_1.end, range_2.end);
+
+        self.insert_span(start, end)
+    }
+}
+#}</code></pre></pre>
+<p>To help after the tokenizing step, lets add a method which will take a bunch
+of tokens and register them with a <code>FileMap</code>. The same caveats as with
+<code>insert_span()</code> will apply here.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl FileMap {
+    /// Register a set of tokenized inputs and turn them into a proper stream
+    /// of tokens. Note that all the caveats from `insert_span()` also apply 
+    /// here.
+    pub fn register_tokens(&amp;self, tokens: Vec&lt;(TokenKind, usize, usize)&gt;) -&gt; Vec&lt;Token&gt; {
+        let mut registered = Vec::new();
+
+        for (kind, start, end) in tokens {
+            let span = self.insert_span(start, end);
+            let token = Token::new(span, kind);
+            registered.push(token);
+        }
+
+        registered
+    }
+}
+#}</code></pre></pre>
+<p>To test that our <code>CodeMap</code> and <code>FileMap</code> behave as we expect them to, let's
+create some dummy &quot;files&quot; and try to create spans in them.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn insert_a_file_into_a_codemap() {
+        let mut map = CodeMap::new();
+        let filename = &quot;foo.rs&quot;;
+        let content = &quot;Hello World!&quot;;
+
+        assert_eq!(map.files.len(), 0);
+        let fm = map.insert_file(filename, content);
+
+        assert_eq!(fm.filename(), filename);
+        assert_eq!(fm.contents(), content);
+        assert_eq!(map.files.len(), 1);
+    }
+
+    #[test]
+    fn get_span_for_substring() {
+        let mut map = CodeMap::new();
+        let src = &quot;Hello World!&quot;;
+        let fm = map.insert_file(&quot;foo.rs&quot;, src);
+
+        let start = 2;
+        let end = 5;
+        let should_be = &amp;src[start..end];
+
+        let span = fm.insert_span(start, end);
+        let got = fm.lookup(span).unwrap();
+        assert_eq!(got, should_be);
+        assert_eq!(fm.range_of(span).unwrap(), start..end);
+
+        let got_from_codemap = map.lookup(span);
+        assert_eq!(got_from_codemap, should_be);
+    }
+
+    #[test]
+    fn spans_for_different_ranges_are_always_unique() {
+        let mut map = CodeMap::new();
+        let src = &quot;Hello World!&quot;;
+        let fm = map.insert_file(&quot;foo.rs&quot;, src);
+
+        let mut spans = Vec::new();
+
+        for start in 0..src.len() {
+            for end in start..src.len() {
+                let span = fm.insert_span(start, end);
+                assert!(!spans.contains(&amp;span), 
+                    &quot;{:?} already contains {:?} ({}..{})&quot;, 
+                    spans, span, start, end);
+                assert!(span != Span::dummy());
+
+                spans.push(span);
+            }
+        }
+    }
+
+    #[test]
+    fn spans_for_identical_ranges_are_identical() {
+        let mut map = CodeMap::new();
+        let src = &quot;Hello World!&quot;;
+        let fm = map.insert_file(&quot;foo.rs&quot;, src);
+
+        let start = 0;
+        let end = 5;
+
+        let span_1 = fm.insert_span(start, end);
+        let span_2 = fm.insert_span(start, end);
+
+        assert_eq!(span_1, span_2);
+    }
+
+    #[test]
+    fn join_multiple_spans() {
+        let mut map = CodeMap::new();
+        let src = &quot;Hello World!&quot;;
+        let fm = map.insert_file(&quot;foo.rs&quot;, src);
+
+        let span_1 = fm.insert_span(0, 2);
+        let span_2 = fm.insert_span(3, 8);
+
+        let joined = fm.merge(span_1, span_2);
+        let equivalent_range = fm.range_of(joined).unwrap();
+
+        assert_eq!(equivalent_range.start, 0);
+        assert_eq!(equivalent_range.end, 8);
+    }
+}
+#}</code></pre></pre>
+
+                </div>
+
+                <!-- Mobile navigation buttons -->
+                
+                    <a rel="prev" href="./errors.html" class="mobile-nav-chapters previous">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+
+            </div>
+
+            
+                <a href="./errors.html" class="nav-chapters previous" title="You can navigate through the chapters using the arrow keys">
+                    <i class="fa fa-angle-left"></i>
+                </a>
+            
+
+            
+
+        </div>
+
+
+        <!-- Local fallback for Font Awesome -->
+        <script>
+            if ($(".fa").css("font-family") !== "FontAwesome") {
+                $('<link rel="stylesheet" type="text/css" href="_FontAwesome/css/font-awesome.css">').prependTo('head');
+            }
+        </script>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        
+
+        
+        <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+        ga('create', 'UA-78714693-2', 'auto');
+        ga('send', 'pageview');
+        </script>
+        
+
+        
+
+        
+
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+    </body>
+</html>

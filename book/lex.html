@@ -1,0 +1,694 @@
+<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Lexing - Create a Static Analyser in Rust</title>
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <base href="">
+
+        <link rel="stylesheet" href="book.css">
+        <link href="https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800" rel="stylesheet" type="text/css">
+        <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro:500" rel="stylesheet" type="text/css">
+
+        <link rel="shortcut icon" href="favicon.png">
+
+        <!-- Font Awesome -->
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme -->
+        
+
+        
+
+        <!-- Fetch Clipboard.js from CDN but have a local fallback -->
+        <script src="https://cdn.jsdelivr.net/clipboard.js/1.6.1/clipboard.min.js"></script>
+        <script>
+            if (typeof Clipboard == 'undefined') {
+                document.write(unescape("%3Cscript src='clipboard.min.js'%3E%3C/script%3E"));
+            }
+        </script>
+
+        <!-- Fetch JQuery from CDN but have a local fallback -->
+        <script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+        <script>
+            if (typeof jQuery == 'undefined') {
+                document.write(unescape("%3Cscript src='jquery.js'%3E%3C/script%3E"));
+            }
+        </script>
+
+        <!-- Fetch store.js from local - TODO add CDN when 2.x.x is available on cdnjs -->
+        <script src="store.js"></script>
+
+        <!-- Custom JS script -->
+        
+
+    </head>
+    <body class="light">
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme = store.get('mdbook-theme');
+            if (theme === null || theme === undefined) { theme = 'light'; }
+            $('body').removeClass().addClass(theme);
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var sidebar = store.get('mdbook-sidebar');
+            if (sidebar === "hidden") { $("html").addClass("sidebar-hidden") }
+            else if (sidebar === "visible") { $("html").addClass("sidebar-visible") }
+        </script>
+
+        <div id="sidebar" class="sidebar">
+            <ul class="chapter"><li class="affix"><a href="./lib.html">Overview</a></li><li class="spacer"></li><li><a href="./lex.html" class="active"><strong>1.</strong> Lexing</a></li><li><a href="./parse/mod.html"><strong>2.</strong> Parsing</a></li><li><ul class="section"><li><a href="./parse/macros.html"><strong>2.1.</strong> Helper Macros</a></li><li><a href="./parse/parser.html"><strong>2.2.</strong> The Parser</a></li><li><a href="./parse/ast.html"><strong>2.3.</strong> The Abstract Syntax Tree</a></li></ul></li><li><a href="./lowering.html"><strong>3.</strong> Type Checking and Lowering</a></li><li><a href="./analysis.html"><strong>4.</strong> Static Analysis</a></li><li><a href="./driver.html"><strong>5.</strong> The Driver</a></li><li class="spacer"></li><li class="affix"><a href="./errors.html">Error Handling</a></li><li class="affix"><a href="./codemap.html">The Code Map</a></li></ul>
+        </div>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page" tabindex="-1">
+                <div id="menu-bar" class="menu-bar">
+                    <div class="left-buttons">
+                        <i id="sidebar-toggle" class="fa fa-bars"></i>
+                        <i id="theme-toggle" class="fa fa-paint-brush"></i>
+                    </div>
+
+                    <h1 class="menu-title">Create a Static Analyser in Rust</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html">
+                            <i id="print-button" class="fa fa-print" title="Print this book"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <div id="content" class="content">
+                    <a class="header" href="./lex.html#lexical-analysis" id="lexical-analysis"><h1>Lexical Analysis</h1></a>
+<p>It's always nice to add doc-comments so rustdoc knows what this module does.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+//! Module for performing lexical analysis on source code.
+#}</code></pre></pre>
+<p>Before anything else, lets import some things we'll require.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+use std::str;
+use codemap::Span;
+use errors::*;
+#}</code></pre></pre>
+<p>A lexer's job is to turn normal strings (which a human can read) into
+something more computer-friendly called a <code>Token</code>. In this crate, a <code>Token</code>
+will be comprised of a <code>Span</code> (more about that <a href="./codemap.html">later</a>), and a <code>TokenKind</code>
+which lets us know which type of token we are dealing with. A <code>TokenKind</code> can
+be multiple different types representing multiple different things, so it
+makes sense to use a Rust enum here.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// Any valid token in the Delphi programming language.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[allow(missing_docs)]
+#[serde(tag = &quot;type&quot;)]
+pub enum TokenKind {
+    Integer(usize),
+    Decimal(f64),
+    Identifier(String),
+    QuotedString(String),
+    Asterisk,
+    At, 
+    Carat, 
+    CloseParen, 
+    CloseSquare, 
+    Colon,
+    Dot, 
+    End,
+    Equals,
+    Minus, 
+    OpenParen, 
+    OpenSquare, 
+    Plus,
+    Semicolon,
+    Slash,
+}
+#}</code></pre></pre>
+<p>We'll also want to implement some helpers to make conversion more ergonomic.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl From&lt;String&gt; for TokenKind {
+    fn from(other: String) -&gt; TokenKind {
+        TokenKind::Identifier(other)
+    }
+}
+
+impl&lt;'a&gt; From&lt;&amp;'a str&gt; for TokenKind {
+    fn from(other: &amp;'a str) -&gt; TokenKind {
+        TokenKind::Identifier(other.to_string())
+    }
+}
+
+impl From&lt;usize&gt; for TokenKind {
+    fn from(other: usize) -&gt; TokenKind {
+        TokenKind::Integer(other)
+    }
+}
+
+impl From&lt;f64&gt; for TokenKind {
+    fn from(other: f64) -&gt; TokenKind {
+        TokenKind::Decimal(other)
+    }
+}
+#}</code></pre></pre>
+<a class="header" href="./lex.html#tokenizing-individual-atoms" id="tokenizing-individual-atoms"><h2>Tokenizing Individual Atoms</h2></a>
+<p>To make things easy, we'll break tokenizing up into little functions which
+take some string slice (<code>&amp;str</code>) and spit out either a token or an error.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+fn tokenize_ident(data: &amp;str) -&gt; Result&lt;(TokenKind, usize)&gt; {
+    // identifiers can't start with a number
+    match data.chars().next() {
+        Some(ch) if ch.is_digit(10) =&gt; bail!(&quot;Identifiers can't start with a number&quot;),
+        None =&gt; bail!(ErrorKind::UnexpectedEOF),
+        _ =&gt; {},
+    }
+
+    let (got, bytes_read) = take_while(data, |ch| ch == '_' || ch.is_alphanumeric())?;
+
+    // TODO: Recognise keywords using a `match` statement here.
+
+    let tok = TokenKind::Identifier(got.to_string());
+    Ok((tok, bytes_read))
+}
+#}</code></pre></pre>
+<p>The <code>take_while()</code> function is just a helper which will call a closure on each
+byte, continuing until the closure no longer returns <code>true</code>.</p>
+<p>It's pretty simple in that you just keep track of the current index, then
+afterwards convert everything from the start up to the index into a <code>&amp;str</code>.
+Making sure to return the number of bytes consumed (that bit will be useful
+for later when we deal with spans).</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// Consumes bytes while a predicate evaluates to true.
+fn take_while&lt;F&gt;(data: &amp;str, mut pred: F) -&gt; Result&lt;(&amp;str, usize)&gt;  
+where F: FnMut(char) -&gt; bool
+{
+    let mut current_index = 0;
+
+    for ch in data.chars() {
+        let should_continue = pred(ch);
+
+        if !should_continue {
+            break;
+        }
+
+        current_index += ch.len_utf8();
+    }
+
+    if current_index == 0 {
+        Err(&quot;No Matches&quot;.into())
+    } else {
+        Ok((&amp;data[..current_index], current_index))
+    }
+}
+#}</code></pre></pre>
+<p>Now lets test it! To make life easier, we'll create a helper macro which
+generates a test for us. We just need to pass in a test name and the function
+being tested, and an input string and expected output. Then the macro will do
+the rest.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+macro_rules! lexer_test {
+    (FAIL: $name:ident, $func:ident, $src:expr) =&gt; {
+        #[cfg(test)]
+        #[test]
+        fn $name() {
+            let src: &amp;str = $src;
+            let func = $func;
+
+            let got = func(src);
+            assert!(got.is_err(), &quot;{:?} should be an error&quot;, got);
+        }
+    };
+    ($name:ident, $func:ident, $src:expr =&gt; $should_be:expr) =&gt; {
+        #[cfg(test)]
+        #[test]
+        fn $name() {
+            let src: &amp;str = $src;
+            let should_be = TokenKind::from($should_be);
+            let func = $func;
+
+            let (got, _bytes_read) = func(src).unwrap();
+            assert_eq!(got, should_be, &quot;Input was {:?}&quot;, src);
+        }
+    };
+}
+#}</code></pre></pre>
+<p>Now a test to check tokenizing identifiers becomes trivial.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+lexer_test!(tokenize_a_single_letter, tokenize_ident, &quot;F&quot; =&gt; &quot;F&quot;);
+lexer_test!(tokenize_an_identifer, tokenize_ident, &quot;Foo&quot; =&gt; &quot;Foo&quot;);
+lexer_test!(tokenize_ident_containing_an_underscore, tokenize_ident, &quot;Foo_bar&quot; =&gt; &quot;Foo_bar&quot;);
+lexer_test!(FAIL: tokenize_ident_cant_start_with_number, tokenize_ident, &quot;7Foo_bar&quot;);
+lexer_test!(FAIL: tokenize_ident_cant_start_with_dot, tokenize_ident, &quot;.Foo_bar&quot;);
+#}</code></pre></pre>
+<p>Note that the macro calls <code>into()</code> on the result for us. Because we've defined
+<code>From&lt;&amp;'a str&gt;</code> for <code>TokenKind</code>, we can use <code>&quot;Foo&quot;</code> as shorthand for the output.</p>
+<p>It'also fairly easy to tokenize integers, they're just a continuous string of
+digits. However if we also want to be able to deal with decimal numbers we
+need to accept something that <em>may</em> look like two integers separated by a
+dot. In this case we the predicate needs to keep track of how many <code>.</code>'s it
+has seen, returning <code>false</code> the moment it sees more than one.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// Tokenize a numeric literal.
+fn tokenize_number(data: &amp;str) -&gt; Result&lt;(TokenKind, usize)&gt; {
+    let mut seen_dot = false;
+
+    let (decimal, bytes_read) = take_while(data, |c| {
+        if c.is_digit(10) {
+            true
+        } else if c == '.' {
+            if !seen_dot {
+                seen_dot = true;
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    })?;
+
+    if seen_dot {
+        let n: f64 = decimal.parse()?;
+        Ok((TokenKind::Decimal(n), bytes_read))
+    } else {
+        let n: usize = decimal.parse()?;
+        Ok((TokenKind::Integer(n), bytes_read))
+
+    }
+}
+#}</code></pre></pre>
+<p>Something interesting with this approach is that a literal like <code>12.4.789</code>
+will be lexed as the decimal <code>12.4</code> followed by a <code>.789</code>, which is an invalid
+float.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+lexer_test!(tokenize_a_single_digit_integer, tokenize_number, &quot;1&quot; =&gt; 1);
+lexer_test!(tokenize_a_longer_integer, tokenize_number, &quot;1234567890&quot; =&gt; 1234567890);
+lexer_test!(tokenize_basic_decimal, tokenize_number, &quot;12.3&quot; =&gt; 12.3);
+lexer_test!(tokenize_string_with_multiple_decimal_points, tokenize_number, &quot;12.3.456&quot; =&gt; 12.3);
+lexer_test!(FAIL: cant_tokenize_a_string_as_a_decimal, tokenize_number, &quot;asdfghj&quot;);
+lexer_test!(tokenizing_decimal_stops_at_alpha, tokenize_number, &quot;123.4asdfghj&quot; =&gt; 123.4);
+#}</code></pre></pre>
+<p>One last utility we're going to need is the ability to skip past whitespace
+characters and comments. These will be implemented as two separate functions
+which are wrapped by a single <code>skip()</code>.</p>
+<p>Let's deal with whitespace first seeing as that's easiest.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+fn skip_whitespace(data: &amp;str) -&gt; usize {
+    match take_while(data, |ch| ch.is_whitespace()) {
+        Ok((_, bytes_skipped)) =&gt; bytes_skipped,
+        _ =&gt; 0,
+    }
+}
+
+#[test]
+fn skip_past_several_whitespace_chars() {
+    let src = &quot; \t\n\r123&quot;;
+    let should_be = 4;
+
+    let num_skipped = skip_whitespace(src);
+    assert_eq!(num_skipped, should_be);
+}
+
+#[test]
+fn skipping_whitespace_when_first_is_a_letter_returns_zero() {
+    let src = &quot;Hello World&quot;;
+    let should_be = 0;
+
+    let num_skipped = skip_whitespace(src);
+    assert_eq!(num_skipped, should_be);
+}
+#}</code></pre></pre>
+<blockquote>
+<p><strong>TODO:</strong> Tokenize string literals</p>
+</blockquote>
+<p>According to <a href="https://wwgetw.prestwoodboards.com/ASPSuite/KB/Document_View.asp?QID=101505">the internets</a>, a comment in Delphi can be written multiple ways.</p>
+<blockquote>
+<p><strong>Commenting Code</strong></p>
+<p>Delphi uses <code>//</code> for a single line comment and both <code>{}</code> and <code>(**)</code> for
+multiple line comments. Although you can nest different types of multiple
+line comments, it is recommended that you don't.</p>
+<p><strong>Compiler Directives - <code>$</code></strong></p>
+<p>A special comment. Delphi compiler directives are in the form of
+<code>{$DIRECTIVE}</code>. Of interest for comments is using the <code>$IFDEF</code> compiler
+directive to remark out code.</p>
+</blockquote>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+fn skip_comments(src: &amp;str) -&gt; usize {
+    let pairs = [(&quot;//&quot;, &quot;\n&quot;), (&quot;{&quot;, &quot;}&quot;), (&quot;(*&quot;, &quot;*)&quot;)];
+
+    for &amp;(pattern, matcher) in &amp;pairs {
+        if src.starts_with(pattern) {
+            let leftovers = skip_until(src, matcher);
+            return src.len() - leftovers.len();
+        }
+    }
+
+    0
+}
+
+fn skip_until&lt;'a&gt;(mut src: &amp;'a str, pattern: &amp;str) -&gt; &amp;'a str {
+    while !src.is_empty() &amp;&amp; !src.starts_with(pattern) {
+        let next_char_size = src.chars().next().expect(&quot;The string isn't empty&quot;).len_utf8();
+        src = &amp;src[next_char_size..];
+    }
+
+    &amp;src[pattern.len()..]
+}
+
+macro_rules! comment_test {
+    ($name:ident, $src:expr =&gt; $should_be:expr) =&gt; {
+        #[cfg(test)]
+        #[test]
+        fn $name() {
+            let got = skip_comments($src);
+            assert_eq!(got, $should_be);
+        }
+    }
+}
+
+comment_test!(slash_slash_skips_to_end_of_line, &quot;// foo bar { baz }\n 1234&quot; =&gt; 19);
+comment_test!(comment_skip_curly_braces, &quot;{ baz \n 1234} hello wor\nld&quot; =&gt; 13);
+comment_test!(comment_skip_round_brackets, &quot;(* Hello World *) asd&quot; =&gt; 17);
+comment_test!(comment_skip_ignores_alphanumeric, &quot;123 hello world&quot; =&gt; 0);
+comment_test!(comment_skip_ignores_whitespace, &quot;   (* *) 123 hello world&quot; =&gt; 0);
+#}</code></pre></pre>
+<p>Lastly, we group the whitespace and comment skipping together seeing as they
+both do the job of skipping characters we don't care about.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// Skip past any whitespace characters or comments.
+fn skip(src: &amp;str) -&gt; usize {
+    let mut remaining = src;
+
+    loop {
+        let ws = skip_whitespace(remaining);
+        remaining = &amp;remaining[ws..];
+        let comments = skip_comments(remaining);
+        remaining = &amp;remaining[comments..];
+
+        if ws + comments == 0 {
+            return src.len() - remaining.len();
+        }
+    }
+}
+#}</code></pre></pre>
+<a class="header" href="./lex.html#the-main-tokenizer-function" id="the-main-tokenizer-function"><h2>The Main Tokenizer Function</h2></a>
+<p>To tie everything together, we'll use a method which matches the next
+character against various patterns in turn. This is essentially just a big
+<code>match</code> statement which defers to the small tokenizer functions we've built
+up until now.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// Try to lex a single token from the input stream.
+pub fn tokenize_single_token(data: &amp;str) -&gt; Result&lt;(TokenKind, usize)&gt; {
+    let next = match data.chars().next() {
+        Some(c) =&gt; c,
+        None =&gt; bail!(ErrorKind::UnexpectedEOF),
+    };
+
+    let (tok, length) = match next {
+        '.' =&gt; (TokenKind::Dot, 1),
+        '=' =&gt; (TokenKind::Equals, 1),
+        '+' =&gt; (TokenKind::Plus, 1),
+        '-' =&gt; (TokenKind::Minus, 1),
+        '*' =&gt; (TokenKind::Asterisk, 1),
+        '/' =&gt; (TokenKind::Slash, 1),
+        '@' =&gt; (TokenKind::At, 1),
+        '^' =&gt; (TokenKind::Carat, 1),
+        '(' =&gt; (TokenKind::OpenParen, 1),
+        ')' =&gt; (TokenKind::CloseParen, 1),
+        '[' =&gt; (TokenKind::OpenSquare, 1),
+        ']' =&gt; (TokenKind::CloseSquare, 1),
+        '0' ... '9' =&gt; tokenize_number(data).chain_err(|| &quot;Couldn't tokenize a number&quot;)?,
+        c @ '_' | c if c.is_alphabetic() =&gt; tokenize_ident(data)
+            .chain_err(|| &quot;Couldn't tokenize an identifier&quot;)?,
+        other =&gt; bail!(ErrorKind::UnknownCharacter(other)),
+    };
+
+    Ok((tok, length))
+}
+#}</code></pre></pre>
+<p>Now lets test it, in theory we should get identical results to the other tests
+written up til now.</p>
+<pre><pre class="playpen"><code class="language-rustlexer_test!(central_tokenizer_ident tokenize_single_token &quot;hello&quot;=&gt;&quot;hello&quot;);">
+# #![allow(unused_variables)]
+#fn main() {
+lexer_test!(central_tokenizer_integer, tokenize_single_token, &quot;1234&quot; =&gt; 1234);
+lexer_test!(central_tokenizer_decimal, tokenize_single_token, &quot;123.4&quot; =&gt; 123.4);
+lexer_test!(central_tokenizer_dot, tokenize_single_token, &quot;.&quot; =&gt; TokenKind::Dot);
+lexer_test!(central_tokenizer_plus, tokenize_single_token, &quot;+&quot; =&gt; TokenKind::Plus);
+lexer_test!(central_tokenizer_minus, tokenize_single_token, &quot;-&quot; =&gt; TokenKind::Minus);
+lexer_test!(central_tokenizer_asterisk, tokenize_single_token, &quot;*&quot; =&gt; TokenKind::Asterisk);
+lexer_test!(central_tokenizer_slash, tokenize_single_token, &quot;/&quot; =&gt; TokenKind::Slash);
+lexer_test!(central_tokenizer_at, tokenize_single_token, &quot;@&quot; =&gt; TokenKind::At);
+lexer_test!(central_tokenizer_carat, tokenize_single_token, &quot;^&quot; =&gt; TokenKind::Carat);
+lexer_test!(central_tokenizer_equals, tokenize_single_token, &quot;=&quot; =&gt; TokenKind::Equals);
+lexer_test!(central_tokenizer_open_paren, tokenize_single_token, &quot;(&quot; =&gt; TokenKind::OpenParen);
+lexer_test!(central_tokenizer_close_paren, tokenize_single_token, &quot;)&quot; =&gt; TokenKind::CloseParen);
+lexer_test!(central_tokenizer_open_square, tokenize_single_token, &quot;[&quot; =&gt; TokenKind::OpenSquare);
+lexer_test!(central_tokenizer_close_square, tokenize_single_token, &quot;]&quot; =&gt; TokenKind::CloseSquare);
+#}</code></pre></pre>
+<a class="header" href="./lex.html#tying-it-all-together" id="tying-it-all-together"><h2>Tying It All Together</h2></a>
+<p>Now we can write the overall tokenizer function. However, because this process
+involves a lot of state, it'll be easier to encapsulate everything in its own
+type while still exposing a high-level <code>tokenize()</code> function to users.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+struct Tokenizer&lt;'a&gt; {
+    current_index: usize,
+    remaining_text: &amp;'a str,
+}
+
+impl&lt;'a&gt; Tokenizer&lt;'a&gt; {
+    fn new(src: &amp;str) -&gt; Tokenizer {
+        Tokenizer {
+            current_index: 0,
+            remaining_text: src,
+        }
+    }
+
+    fn next_token(&amp;mut self) -&gt; Result&lt;Option&lt;(TokenKind, usize, usize)&gt;&gt; {
+        self.skip_whitespace();
+
+        if self.remaining_text.is_empty() {
+            Ok(None)
+        } else {
+            let start = self.current_index;
+            let tok = self._next_token()
+                .chain_err(|| ErrorKind::MessageWithLocation(self.current_index,
+                    &quot;Couldn't read the next token&quot;))?;
+            let end = self.current_index;
+            Ok(Some((tok, start, end)))
+        }
+    }
+
+    fn skip_whitespace(&amp;mut self) {
+        let skipped = skip(self.remaining_text);
+        self.chomp(skipped);
+    }
+
+    fn _next_token(&amp;mut self) -&gt; Result&lt;TokenKind&gt; {
+        let (tok, bytes_read) = tokenize_single_token(self.remaining_text)?;
+        self.chomp(bytes_read);
+
+        Ok(tok)
+    }
+
+    fn chomp(&amp;mut self, num_bytes: usize) {
+        self.remaining_text = &amp;self.remaining_text[num_bytes..];
+        self.current_index += num_bytes;
+    }
+}
+
+/// Turn a string of valid Delphi code into a list of tokens, including the 
+/// location of that token's start and end point in the original source code.
+///
+/// Note the token indices represent the half-open interval `[start, end)`, 
+/// equivalent to `start .. end` in Rust.
+pub fn tokenize(src: &amp;str) -&gt; Result&lt;Vec&lt;(TokenKind, usize, usize)&gt;&gt; {
+    let mut tokenizer = Tokenizer::new(src);
+    let mut tokens = Vec::new();
+
+    while let Some(tok) = tokenizer.next_token()? {
+        tokens.push(tok);
+    }
+
+    Ok(tokens)
+}
+#}</code></pre></pre>
+<p>Because we also want to make sure the location of tokens are correct, testing
+this will be a little more involved. We essentially need to write up some
+(valid) Delphi code, manually inspect it, then make sure we get back <em>exactly</em>
+what we expect. Byte indices and all.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+#[cfg(test)]
+#[test]
+fn tokenize_a_basic_expression() {
+    let src = &quot;foo = 1 + 2.34&quot;;
+    let should_be = vec![
+        (TokenKind::from(&quot;foo&quot;), 0, 3),
+        (TokenKind::Equals, 4, 5),
+        (TokenKind::from(1), 6, 7),
+        (TokenKind::Plus, 8, 9),
+        (TokenKind::from(2.34), 10, 14),
+    ];
+
+    let got = tokenize(src).unwrap();
+    assert_eq!(got, should_be);
+}
+
+#[cfg(test)]
+#[test]
+fn tokenizer_detects_invalid_stuff() {
+    let src = &quot;foo bar `%^&amp;\\&quot;;
+    let index_of_backtick = 8;
+
+    let err = tokenize(src).unwrap_err();
+    match err.kind() {
+        &amp;ErrorKind::MessageWithLocation(loc, _) =&gt; assert_eq!(loc, index_of_backtick),
+        other =&gt; panic!(&quot;Unexpected error: {}&quot;, other),
+    }
+}
+#}</code></pre></pre>
+<p>You'll probably notice that we're returning a <code>TokenKind</code> and a pair of integers
+inside a tuple, which isn't overly idiomatic. Idiomatic Rust would bundle
+these up into a more strongly typed tuple of <code>TokenKind</code> and <code>Span</code>, where a span
+corresponds to the start and end indices of the token.</p>
+<p>The reason we do things slightly strangly is that we're using a <code>CodeMap</code> to
+manage all these <code>Span</code>s, so when the caller calls the <code>tokenize()</code> function
+it's their responsibility to insert these token locations into a <code>CodeMap</code>.
+By returning a plain tuple of integers it means we can defer dealing with the
+<code>CodeMap</code> until later on. Vastly simplifying the tokenizing code.</p>
+<p>For completeness though, here is the <code>Token</code> people will be using. We haven't
+created any in this module, but it makes sense for its definition to be here.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// A valid Delphi source code token.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Token {
+    /// The token's location relative to the rest of the files being 
+    /// processed.
+    pub span: Span,
+    /// What kind of token is this?
+    pub kind: TokenKind,
+}
+
+impl Token {
+    /// Create a new token out of a `Span` and something which can be turned 
+    /// into a `TokenKind`.
+    pub fn new&lt;K: Into&lt;TokenKind&gt;&gt;(span: Span, kind: K) -&gt; Token {
+        let kind = kind.into();
+        Token { span, kind }
+    }
+}
+
+impl&lt;T&gt; From&lt;T&gt; for Token 
+where T: Into&lt;TokenKind&gt; {
+    fn from(other: T) -&gt; Token {
+        Token::new(Span::dummy(), other)
+    }
+}
+#}</code></pre></pre>
+<p>And that's about it for lexical analysis. We've now got the basic building
+blocks of a compiler/static analyser, and are able to move onto the next
+step... Actually making sense out of all these tokens!</p>
+
+                </div>
+
+                <!-- Mobile navigation buttons -->
+                
+                    <a rel="prev" href="./lib.html" class="mobile-nav-chapters previous">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+                    <a rel="next" href="./parse/mod.html" class="mobile-nav-chapters next">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                
+
+            </div>
+
+            
+                <a href="./lib.html" class="nav-chapters previous" title="You can navigate through the chapters using the arrow keys">
+                    <i class="fa fa-angle-left"></i>
+                </a>
+            
+
+            
+                <a href="./parse/mod.html" class="nav-chapters next" title="You can navigate through the chapters using the arrow keys">
+                    <i class="fa fa-angle-right"></i>
+                </a>
+            
+
+        </div>
+
+
+        <!-- Local fallback for Font Awesome -->
+        <script>
+            if ($(".fa").css("font-family") !== "FontAwesome") {
+                $('<link rel="stylesheet" type="text/css" href="_FontAwesome/css/font-awesome.css">').prependTo('head');
+            }
+        </script>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        
+
+        
+        <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+        ga('create', 'UA-78714693-2', 'auto');
+        ga('send', 'pageview');
+        </script>
+        
+
+        
+
+        
+
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+    </body>
+</html>

@@ -1,0 +1,277 @@
+<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Overview - Create a Static Analyser in Rust</title>
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <base href="">
+
+        <link rel="stylesheet" href="book.css">
+        <link href="https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800" rel="stylesheet" type="text/css">
+        <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro:500" rel="stylesheet" type="text/css">
+
+        <link rel="shortcut icon" href="favicon.png">
+
+        <!-- Font Awesome -->
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme -->
+        
+
+        
+
+        <!-- Fetch Clipboard.js from CDN but have a local fallback -->
+        <script src="https://cdn.jsdelivr.net/clipboard.js/1.6.1/clipboard.min.js"></script>
+        <script>
+            if (typeof Clipboard == 'undefined') {
+                document.write(unescape("%3Cscript src='clipboard.min.js'%3E%3C/script%3E"));
+            }
+        </script>
+
+        <!-- Fetch JQuery from CDN but have a local fallback -->
+        <script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+        <script>
+            if (typeof jQuery == 'undefined') {
+                document.write(unescape("%3Cscript src='jquery.js'%3E%3C/script%3E"));
+            }
+        </script>
+
+        <!-- Fetch store.js from local - TODO add CDN when 2.x.x is available on cdnjs -->
+        <script src="store.js"></script>
+
+        <!-- Custom JS script -->
+        
+
+    </head>
+    <body class="light">
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme = store.get('mdbook-theme');
+            if (theme === null || theme === undefined) { theme = 'light'; }
+            $('body').removeClass().addClass(theme);
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var sidebar = store.get('mdbook-sidebar');
+            if (sidebar === "hidden") { $("html").addClass("sidebar-hidden") }
+            else if (sidebar === "visible") { $("html").addClass("sidebar-visible") }
+        </script>
+
+        <div id="sidebar" class="sidebar">
+            <ul class="chapter"><li class="affix"><a href="./lib.html" class="active">Overview</a></li><li class="spacer"></li><li><a href="./lex.html"><strong>1.</strong> Lexing</a></li><li><a href="./parse/mod.html"><strong>2.</strong> Parsing</a></li><li><ul class="section"><li><a href="./parse/macros.html"><strong>2.1.</strong> Helper Macros</a></li><li><a href="./parse/parser.html"><strong>2.2.</strong> The Parser</a></li><li><a href="./parse/ast.html"><strong>2.3.</strong> The Abstract Syntax Tree</a></li></ul></li><li><a href="./lowering.html"><strong>3.</strong> Type Checking and Lowering</a></li><li><a href="./analysis.html"><strong>4.</strong> Static Analysis</a></li><li><a href="./driver.html"><strong>5.</strong> The Driver</a></li><li class="spacer"></li><li class="affix"><a href="./errors.html">Error Handling</a></li><li class="affix"><a href="./codemap.html">The Code Map</a></li></ul>
+        </div>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page" tabindex="-1">
+                <div id="menu-bar" class="menu-bar">
+                    <div class="left-buttons">
+                        <i id="sidebar-toggle" class="fa fa-bars"></i>
+                        <i id="theme-toggle" class="fa fa-paint-brush"></i>
+                    </div>
+
+                    <h1 class="menu-title">Create a Static Analyser in Rust</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html">
+                            <i id="print-button" class="fa fa-print" title="Print this book"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <div id="content" class="content">
+                    <a class="header" href="./lib.html#writing-a-static-analyser-in-rust" id="writing-a-static-analyser-in-rust"><h1>Writing a Static Analyser in Rust</h1></a>
+<p>To try out the concept of <a href="https://en.wikipedia.org/wiki/Literate_programming"><em>Literate Programming</em></a> (using the awesome <a href="https://github.com/pnkfelix/tango">tango</a>
+crate), I'm going to write a small static analyser for a basic Programming
+language. Because it's so much more interesting to use a programming language
+available in the wild, compared to some contrived example, we're going to
+analyse Delphi (a Pascal variant).</p>
+<p>Believe it or not, but this entire book is the actual source code for this
+static analyser. Check out the <a href="https://github.com/Michael-F-Bryan/static-analyser-in-rust">repo</a> on GitHub if you want to see more.</p>
+<p>Here's your basic Hello World:</p>
+<pre><code class="language-pascal">procedure TForm1.ShowAMessage;
+begin
+  ShowMessage('Hello World!');
+end;
+</code></pre>
+<p>All you need to do is use the IDE to hook that function up to be run whenever
+a button is clicked and it'll show a &quot;Hello World!&quot; dialog.</p>
+<blockquote>
+<p><strong>Note:</strong> The API docs for this crate should be placed alongside the book.
+You can access then <a href="../doc/static_analyser/index.html">here</a> (you'll need
+to use <code>cargo doc --open</code> if viewing locally).</p>
+</blockquote>
+<p>First up, lets add some top-level docs and import some crates we're going to
+need:</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+//! A parser and static analysis library for exploring Delphi code.
+//!
+//! This is written using a *Literate Programming* style, so you may find it
+//! easier to inspect the [rendered version] instead.
+//!
+//! [rendered version]: https://michael-f-bryan.github.io/static-analyser-in-rust/
+
+#![deny(missing_docs)]
+
+#[cfg(test)]
+#[macro_use]
+extern crate pretty_assertions;
+#[macro_use]
+extern crate error_chain;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+#}</code></pre></pre>
+<p>There are several steps you need to perform to do static analysis, first is
+tokenizing (often called <em>lexical analysis</em>). This stage turns the characters
+in the raw source code into <code>Tokens</code> like &quot;if&quot;, &quot;begin&quot;, integer literals and
+operators.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+pub mod lex;
+#}</code></pre></pre>
+<p>Next we do the parsing stage (<em>semantic analysis</em>) to convert our stream of
+tokens into an Abstract Syntax Tree. This is a representation of the program
+as it exists on disk.</p>
+<p>A lot of static analysis passes can get away with working purely at the AST
+level. For example, if you want to make sure people don't accidentally divide
+by zero it's just a case of looking for all division nodes and checking that
+the right hand isn't a numeric literal representing zero (e.g. <code>0</code> or <code>0.0</code>).</p>
+<p>Another useful lint which can be applied at this level is
+<a href="https://en.wikipedia.org/wiki/Cyclomatic_complexity">cyclomatic complexity</a>, i.e. how &quot;complex&quot; a function/procedure is. This is
+normally just a case of walking the body of a function and counting the number
+of branches, loops, and <code>try/catch</code> blocks encountered.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+#[macro_use]
+pub mod parse;
+#}</code></pre></pre>
+<p>The third step is type checking and generating a High level Intermediate
+Representation (HIR), often referred to as &quot;lowering&quot; (converting from a high
+level representation to a lower one).</p>
+<p>While the AST is very flexible and useful, it works at the language syntax
+level and completely misses the <em>semantics</em> of a language. This means an
+expression like <code>'foo' + 42</code> or dereferencing a float is a perfectly valid
+AST node.</p>
+<p>To perform some of the more advanced analyses we'll need to have access to
+the full context surrounding an expression to determine if it is valid. This
+typically involves figuring out the type for each variable and expression,
+as well as resolving imports and stitching multiple unit files into one
+cohesive data structure.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+pub mod lowering;
+#}</code></pre></pre>
+<p>Now we've <em>finally</em> resolved all imports and types we're <em>guaranteed</em> to have
+a syntactically and semantically valid program. This doesn't mean it's correct
+though! At this stage we can create passes which employ the full strength of
+the compiler/static analyser to check the <em>logic</em> of our program. This lets
+us do</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+pub mod analysis;
+#}</code></pre></pre>
+<p>We also need to handle internal errors. To keep things clean lets put that in
+its own module too.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+pub mod errors;
+#}</code></pre></pre>
+<p>Another very important thing to have is a mapping which lets you talk about a
+logical chunk of code (i.e. <em>this</em> function body or <em>that</em> string literal) and
+retrieve the corresponding source code. This will be crucial for the later
+steps where we want to indicate where an error occurred to the user.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+pub mod codemap;
+#}</code></pre></pre>
+<p>Finally, there's the <code>Driver</code>. He's in charge of the show an is usually the
+thing you'll want to invoke or hook into to tweak the analysis process.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+mod driver;
+pub use driver::Driver;
+#}</code></pre></pre>
+<a class="header" href="./lib.html#a-note-on-project-design" id="a-note-on-project-design"><h2>A Note on Project Design</h2></a>
+<p>A lot of the time, if you need to write a parser you'll want to use some sort
+of parser combinator or generator library. This greatly decreases the effort
+and time required, but you often trade that off with poor error handling and
+error messages. Because we're writing a tool for analysing your code, it stands
+to reason that if the user passes in dodgy code, we can detect this (without
+crashing) and emit a <strong>useful</strong> error message. All of this means that we'll
+want to write the lexing and parsing stuff by hand instead of deferring to
+another tool.</p>
+<p>If you are following along at home, click through to one of the sections to
+learn about it in more detail.</p>
+
+                </div>
+
+                <!-- Mobile navigation buttons -->
+                
+
+                
+                    <a rel="next" href="./lex.html" class="mobile-nav-chapters next">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                
+
+            </div>
+
+            
+
+            
+                <a href="./lex.html" class="nav-chapters next" title="You can navigate through the chapters using the arrow keys">
+                    <i class="fa fa-angle-right"></i>
+                </a>
+            
+
+        </div>
+
+
+        <!-- Local fallback for Font Awesome -->
+        <script>
+            if ($(".fa").css("font-family") !== "FontAwesome") {
+                $('<link rel="stylesheet" type="text/css" href="_FontAwesome/css/font-awesome.css">').prependTo('head');
+            }
+        </script>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        
+
+        
+        <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+        ga('create', 'UA-78714693-2', 'auto');
+        ga('send', 'pageview');
+        </script>
+        
+
+        
+
+        
+
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+    </body>
+</html>

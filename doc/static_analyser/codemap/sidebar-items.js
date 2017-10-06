@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["CodeMap","A mapping of `Span`s to the files in which they are located."],["FileMap","A mapping which keeps track of a file's contents and allows you to cheaply access substrings of the original content."],["Span","A unique identifier pointing to a substring in some file."]]});

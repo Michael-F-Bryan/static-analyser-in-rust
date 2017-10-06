@@ -1,0 +1,394 @@
+<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>The Parser - Create a Static Analyser in Rust</title>
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <base href="../">
+
+        <link rel="stylesheet" href="book.css">
+        <link href="https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800" rel="stylesheet" type="text/css">
+        <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro:500" rel="stylesheet" type="text/css">
+
+        <link rel="shortcut icon" href="favicon.png">
+
+        <!-- Font Awesome -->
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css">
+
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme -->
+        
+
+        
+
+        <!-- Fetch Clipboard.js from CDN but have a local fallback -->
+        <script src="https://cdn.jsdelivr.net/clipboard.js/1.6.1/clipboard.min.js"></script>
+        <script>
+            if (typeof Clipboard == 'undefined') {
+                document.write(unescape("%3Cscript src='clipboard.min.js'%3E%3C/script%3E"));
+            }
+        </script>
+
+        <!-- Fetch JQuery from CDN but have a local fallback -->
+        <script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+        <script>
+            if (typeof jQuery == 'undefined') {
+                document.write(unescape("%3Cscript src='jquery.js'%3E%3C/script%3E"));
+            }
+        </script>
+
+        <!-- Fetch store.js from local - TODO add CDN when 2.x.x is available on cdnjs -->
+        <script src="store.js"></script>
+
+        <!-- Custom JS script -->
+        
+
+    </head>
+    <body class="light">
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme = store.get('mdbook-theme');
+            if (theme === null || theme === undefined) { theme = 'light'; }
+            $('body').removeClass().addClass(theme);
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var sidebar = store.get('mdbook-sidebar');
+            if (sidebar === "hidden") { $("html").addClass("sidebar-hidden") }
+            else if (sidebar === "visible") { $("html").addClass("sidebar-visible") }
+        </script>
+
+        <div id="sidebar" class="sidebar">
+            <ul class="chapter"><li class="affix"><a href="./lib.html">Overview</a></li><li class="spacer"></li><li><a href="./lex.html"><strong>1.</strong> Lexing</a></li><li><a href="./parse/mod.html"><strong>2.</strong> Parsing</a></li><li><ul class="section"><li><a href="./parse/macros.html"><strong>2.1.</strong> Helper Macros</a></li><li><a href="./parse/parser.html" class="active"><strong>2.2.</strong> The Parser</a></li><li><a href="./parse/ast.html"><strong>2.3.</strong> The Abstract Syntax Tree</a></li></ul></li><li><a href="./lowering.html"><strong>3.</strong> Type Checking and Lowering</a></li><li><a href="./analysis.html"><strong>4.</strong> Static Analysis</a></li><li><a href="./driver.html"><strong>5.</strong> The Driver</a></li><li class="spacer"></li><li class="affix"><a href="./errors.html">Error Handling</a></li><li class="affix"><a href="./codemap.html">The Code Map</a></li></ul>
+        </div>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page" tabindex="-1">
+                <div id="menu-bar" class="menu-bar">
+                    <div class="left-buttons">
+                        <i id="sidebar-toggle" class="fa fa-bars"></i>
+                        <i id="theme-toggle" class="fa fa-paint-brush"></i>
+                    </div>
+
+                    <h1 class="menu-title">Create a Static Analyser in Rust</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html">
+                            <i id="print-button" class="fa fa-print" title="Print this book"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <div id="content" class="content">
+                    <a class="header" href="./parse/parser.html#parsing" id="parsing"><h1>Parsing</h1></a>
+<p>Now that we've turned the source code into tokens we can construct a more
+computer-friendly representation for the program. This representation is
+often called an <em>Abstract Syntax Tree</em> because it's a high-level tree
+datastructure which reflects a program's syntax.</p>
+<a class="header" href="./parse/parser.html#the-general-idea" id="the-general-idea"><h2>The General Idea</h2></a>
+<p>Before we start with parsing, lets look at an example chunk of Delphi code
+to get a feel for the language. A <em>unit file</em> is the basic building block of a
+Delphi program, analogous to a <code>*.c</code> file. The <code>Main()</code> function is typically
+elsewhere in GUI programs because an application's endpoint is typically
+managed by the GUI framework or IDE.</p>
+<pre><code class="language-delphi">unit Unit1;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
+  Dialogs, StdCtrls;
+
+type
+  TForm1 = class(TForm)
+    Label1: TLabel;      // The label we have added
+    Button1: TButton;    // The button we have added
+    procedure Button1Click(Sender: TObject);
+  private
+    { private declarations }
+  public
+    { public declarations }
+  end;
+
+var
+  Form1: TForm1;
+
+implementation
+
+{$R *.dfm}
+
+// The button action we have added
+procedure TForm1.Button1Click(Sender: TObject);
+begin
+  Label1.Caption := 'Hello World';    // Label changed when button pressed
+end;
+
+end.
+</code></pre>
+<p>At a very high level, a unit file consists of a <code>unit</code> statement declaring the
+unit's name, followed by the <code>interface</code> (kinda like a <code>*.h</code> file) then an
+<code>implementation</code> section, before ending with a <code>end.</code>.</p>
+<p>There's a formal language used to express a language's grammar called
+<em>Backus–Naur form</em>. That previous paragraph would translate to something like
+the following:</p>
+<pre><code class="language-ebnf">file        = unit_decl interface implementation &quot;end.&quot;;
+unit_decl   = &quot;unit&quot; unit_name SEMICOLON;
+unit_name   = WORD;
+interface   = &quot;interface&quot; uses types vars;
+uses        = &quot;uses&quot; WORD (&quot;,&quot; WORD)* SEMICOLON
+             | ε;
+types       = &quot;type&quot; type_decl*;
+vars        = &quot;var&quot; var_decl*;
+</code></pre>
+<p>With the terminals (<code>WORD</code>, <code>SEMICOLON</code>, and friends) being their usual selves.</p>
+<p>Delphi has a pretty simple syntax, so we're going to use a standard recursive
+descent parser. This is just an object which has a method roughly corresponding
+to each rule in the language's grammar.</p>
+<a class="header" href="./parse/parser.html#the-parser-object" id="the-parser-object"><h2>The Parser Object</h2></a>
+<p>As usual, before we can do anything else we're going to have to import a couple
+dependencies.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+use std::rc::Rc;
+
+use lex::{Token, TokenKind};
+use codemap::{Span, FileMap};
+use parse::ast::{Literal, LiteralKind, Ident, DottedIdent};
+use errors::*;
+#}</code></pre></pre>
+<p>The <code>Parser</code> itself just contains the tokens and their corresponding <code>FileMap</code>.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+/// A parser for turning a stream of tokens into a Abstract Syntax Tree.
+#[derive(Debug)]
+pub struct Parser {
+  tokens: Vec&lt;Token&gt;,
+  filemap: Rc&lt;FileMap&gt;,
+  current_index: usize,
+}
+
+impl Parser {
+  /// Create a new parser.
+  pub fn new(tokens: Vec&lt;Token&gt;, filemap: Rc&lt;FileMap&gt;) -&gt; Parser {
+    let current_index = 0;
+    Parser { tokens, filemap, current_index }
+  }
+
+  /// Peek at the current token.
+  fn peek(&amp;self) -&gt; Option&lt;&amp;TokenKind&gt; {
+    self.tokens.get(self.current_index).map(|t| &amp;t.kind)
+  }
+
+  /// Get the current token, moving the index along one.
+  fn next(&amp;mut self) -&gt; Option&lt;&amp;Token&gt; {
+    let tok = self.tokens.get(self.current_index);
+
+    if tok.is_some() {
+      self.current_index += 1;
+    }
+
+    tok
+  }
+}
+#}</code></pre></pre>
+<p>We'll implement the various grammar rules from the bottom up. Meaning we'll
+start with the very basics like expressions, then build things up until we
+get to the overall program.</p>
+<p>First up lets have a go at parsing <code>Literals</code>. We do it in two steps, first
+you peek at the next token to make sure it's a kind you expect, then you
+unpack the token and convert it into it's equivalent AST node. A lot of the
+pattern matching boilerplate can be minimised with the judicious use of macros.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl Parser {
+  fn parse_literal(&amp;mut self) -&gt; Result&lt;Literal&gt; {
+    match self.peek() {
+      Some(&amp;TokenKind::Integer(_)) | 
+      Some(&amp;TokenKind::Decimal(_)) | 
+      Some(&amp;TokenKind::QuotedString(_)) =&gt; {},
+      Some(_) =&gt; bail!(&quot;Expected a literal&quot;),
+      None =&gt; bail!(ErrorKind::UnexpectedEOF),
+    };
+
+    let next = self.next().expect(&quot;unreachable&quot;);
+    let lit_kind = match next.kind {
+      TokenKind::Integer(i) =&gt; LiteralKind::Integer(i),
+      TokenKind::Decimal(d) =&gt; LiteralKind::Decimal(d),
+      TokenKind::QuotedString(ref s) =&gt; LiteralKind::String(s.clone()),
+      ref other =&gt; panic!(&quot;Unreachable token kind: {:?}&quot;, other),
+    };
+
+    Ok(Literal {
+      span: next.span,
+      kind: lit_kind
+    })
+  }
+}
+#}</code></pre></pre>
+<p>Like the tokenizing module, we're going to need to write lots of tests to
+check our parser recognises things as we expect them to. Unfortunately the
+types and syntactic structures used will be slightly different, so we'll
+use macros to abstract away a lot of the boilerplate.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+macro_rules! parser_test {
+  ($name:ident, $method:ident, $src:expr =&gt; $should_be:expr) =&gt;  {
+    #[cfg(test)]
+    #[test]
+    fn $name() {
+      // create a codemap and tokenize our input string
+      let mut codemap = $crate::codemap::CodeMap::new();
+      let filemap = codemap.insert_file(&quot;dummy.pas&quot;, $src);
+      let tokenized = $crate::lex::tokenize(filemap.contents())
+        .chain_err(|| &quot;Tokenizing failed&quot;)
+        .unwrap();
+      let tokens = filemap.register_tokens(tokenized);
+
+      let should_be = $should_be;
+
+      let mut parser = Parser::new(tokens, filemap);
+      let got = parser.$method().unwrap();
+
+      assert_eq!(got, should_be);
+    }
+  }
+}
+#}</code></pre></pre>
+<p>Now we have our basic test harness set up, lets see if literal parsing works.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+parser_test!(integer_literal, parse_literal, &quot;123&quot; =&gt; LiteralKind::Integer(123));
+parser_test!(parse_float_literal, parse_literal, &quot;12.3&quot; =&gt; LiteralKind::Decimal(12.3));
+// TODO: re-enable this when string parsing is implemented
+// parser_test!(parse_string_literal, parse_literal, &quot;'12.3'&quot; =&gt; LiteralKind::String(&quot;12.3&quot;.to_string()));
+#}</code></pre></pre>
+<p>Another easy thing to implement is parsing identifiers and dotted identifiers
+(e.g. <code>foo.bar.baz</code>). To recognise a dotted identifier you first look for one
+identifier, then keep trying to take a pair of dots and idents until there are
+no more.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+impl Parser {
+  fn parse_ident(&amp;mut self) -&gt; Result&lt;Ident&gt; {
+    match self.peek() {
+      Some(&amp;TokenKind::Identifier(_)) =&gt; {},
+      _ =&gt; bail!(&quot;Expected an identifier&quot;),
+    }
+
+    let next = self.next().unwrap();
+
+    if let TokenKind::Identifier(ref ident) = next.kind {
+      Ok(Ident {
+        span: next.span,
+        name: ident.clone(),
+      })
+    } else {
+      unreachable!()
+    }
+  }
+
+  fn parse_dotted_ident(&amp;mut self) -&gt; Result&lt;DottedIdent&gt; {
+    let first = self.parse_ident()?;
+    let mut parts = vec![first];
+
+    while self.peek() == Some(&amp;TokenKind::Dot) {
+      let _ = self.next();
+      let next = self.parse_ident()?;
+      parts.push(next);
+    }
+
+    // the span for a dotted ident should be the union of the spans for
+    // each of its components.
+    let span = parts.iter()
+                    .skip(1)
+                    .fold(parts[0].span, |l, r| self.filemap.merge(l, r.span));
+
+    Ok(DottedIdent { span, parts })    
+  }
+}
+#}</code></pre></pre>
+<p>Using our <code>parser_test!()</code> macro makes these a piece of cake to test.</p>
+<pre><pre class="playpen"><code class="language-rust">
+# #![allow(unused_variables)]
+#fn main() {
+parser_test!(parse_a_basic_ident, parse_ident, &quot;foo&quot; =&gt; &quot;foo&quot;);
+parser_test!(parse_a_dotted_ident, parse_dotted_ident, &quot;foo.bar.baz&quot; =&gt; [&quot;foo&quot;, &quot;bar&quot;, &quot;baz&quot;]);
+parser_test!(parse_a_single_ident_as_dotted, parse_dotted_ident, &quot;foo&quot; =&gt; [&quot;foo&quot;]);
+#}</code></pre></pre>
+
+                </div>
+
+                <!-- Mobile navigation buttons -->
+                
+                    <a rel="prev" href="./parse/macros.html" class="mobile-nav-chapters previous">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+                    <a rel="next" href="./parse/ast.html" class="mobile-nav-chapters next">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                
+
+            </div>
+
+            
+                <a href="./parse/macros.html" class="nav-chapters previous" title="You can navigate through the chapters using the arrow keys">
+                    <i class="fa fa-angle-left"></i>
+                </a>
+            
+
+            
+                <a href="./parse/ast.html" class="nav-chapters next" title="You can navigate through the chapters using the arrow keys">
+                    <i class="fa fa-angle-right"></i>
+                </a>
+            
+
+        </div>
+
+
+        <!-- Local fallback for Font Awesome -->
+        <script>
+            if ($(".fa").css("font-family") !== "FontAwesome") {
+                $('<link rel="stylesheet" type="text/css" href="_FontAwesome/css/font-awesome.css">').prependTo('head');
+            }
+        </script>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        
+
+        
+        <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+        ga('create', 'UA-78714693-2', 'auto');
+        ga('send', 'pageview');
+        </script>
+        
+
+        
+
+        
+
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+    </body>
+</html>

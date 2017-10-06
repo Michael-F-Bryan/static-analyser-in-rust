@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["LiteralKind",""]],"struct":[["DottedIdent",""],["Ident",""],["Literal",""],["Parser","A parser for turning a stream of tokens into a Abstract Syntax Tree."]]});
