@@ -9,14 +9,15 @@ The most basic element of the AST is a `Literal`. These are either integer,
 float, or string literals.
 
 ```rust
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum LiteralKind {
     Integer(usize),
     Decimal(f64),
     String(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Literal {
     pub span: Span,
     pub kind: LiteralKind,
@@ -49,13 +50,13 @@ impl PartialEq<LiteralKind> for Literal {
 We also want to deal with identifiers and dot-separated identifiers.
 
 ```rust
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Ident {
     pub span: Span,
     pub name: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DottedIdent {
     pub span: Span,
     pub parts: Vec<Ident>,

@@ -10,3 +10,5 @@ tango = "0.7"
 [dependencies]
 error-chain = "0.11"
 pretty_assertions = "0.3.4"
+serde = "1.0.15"
+serde_derive = "1.0.15"

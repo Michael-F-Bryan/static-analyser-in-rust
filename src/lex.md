@@ -25,8 +25,9 @@ makes sense to use a Rust enum here.
 
 ```rust
 /// Any valid token in the Delphi programming language.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
+#[serde(tag = "type")]
 pub enum TokenKind {
     Integer(usize),
     Decimal(f64),
@@ -531,7 +532,7 @@ created any in this module, but it makes sense for its definition to be here.
 
 ```rust
 /// A valid Delphi source code token.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Token {
     /// The token's location relative to the rest of the files being 
     /// processed.

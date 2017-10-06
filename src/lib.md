@@ -48,6 +48,9 @@ need:
 extern crate pretty_assertions;
 #[macro_use]
 extern crate error_chain;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 ```
 
 There are several steps you need to perform to do static analysis, first is 

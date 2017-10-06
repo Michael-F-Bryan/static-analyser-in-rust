@@ -28,7 +28,7 @@ result in a panic if you are lucky, or silently give you garbage.
 ///
 /// To get back the original string this points to you'll need to look it up
 /// in a `CodeMap` or `FileMap`. 
-#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
 pub struct Span(usize);
 
 impl Span {

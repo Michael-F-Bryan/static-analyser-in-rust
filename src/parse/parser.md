@@ -239,6 +239,8 @@ impl Parser {
       parts.push(next);
     }
 
+    // the span for a dotted ident should be the union of the spans for
+    // each of its components.
     let span = parts.iter()
                     .skip(1)
                     .fold(parts[0].span, |l, r| self.filemap.merge(l, r.span));

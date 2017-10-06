@@ -20,7 +20,7 @@ and its various types of nodes.
 
 ```rust
 mod ast;
-pub use self::ast::{Literal, LiteralKind};
+pub use self::ast::{Literal, LiteralKind, Ident, DottedIdent};
 ```
 
 If you are following along at home you'll probably want to keep the pages for
