@@ -51,7 +51,9 @@ extern crate error_chain;
 ```
 
 There are several steps you need to perform to do static analysis, first is 
-tokenizing (often called *lexical analysis*).
+tokenizing (often called *lexical analysis*). This stage turns the characters
+in the raw source code into `Tokens` like "if", "begin", integer literals and
+operators.
 
 ```rust
 pub mod lex;
