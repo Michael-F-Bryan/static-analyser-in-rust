@@ -85,9 +85,12 @@ dependencies.
 
 ```rust
 use std::rc::Rc;
+use std::borrow::Borrow;
+
 use lex::{Token, TokenKind};
 use codemap::{Span, FileMap};
-use parse::ast::{Literal, LiteralKind};
+use parse::ast::{Literal, LiteralKind, Ident, DottedIdent};
+use errors::*;
 ```
 
 The `Parser` itself just contains the tokens and their corresponding `FileMap`.
@@ -102,6 +105,12 @@ pub struct Parser {
 }
 
 impl Parser {
+  /// Create a new parser.
+  pub fn new(tokens: Vec<Token>, filemap: Rc<FileMap>) -> Parser {
+    let current_index = 0;
+    Parser { tokens, filemap, current_index }
+  }
+
   /// Peek at the current token.
   fn peek(&self) -> Option<&TokenKind> {
     self.tokens.get(self.current_index).map(|t| &t.kind)
@@ -131,12 +140,13 @@ pattern matching boilerplate can be minimised with the judicious use of macros.
 
 ```rust
 impl Parser {
-  fn parse_literal(&mut self) -> Option<Literal> {
+  fn parse_literal(&mut self) -> Result<Literal> {
     match self.peek() {
       Some(&TokenKind::Integer(_)) | 
       Some(&TokenKind::Decimal(_)) | 
       Some(&TokenKind::QuotedString(_)) => {},
-      _ => return None,
+      Some(_) => bail!("Expected a literal"),
+      None => bail!(ErrorKind::UnexpectedEOF),
     };
 
     let next = self.next().expect("unreachable");
@@ -147,10 +157,97 @@ impl Parser {
       ref other => panic!("Unreachable token kind: {:?}", other),
     };
 
-    Some(Literal {
+    Ok(Literal {
       span: next.span,
       kind: lit_kind
     })
   }
 }
+```
+
+Like the tokenizing module, we're going to need to write lots of tests to 
+check our parser recognises things as we expect them to. Unfortunately the
+types and syntactic structures used will be slightly different, so we'll
+use macros to abstract away a lot of the boilerplate.
+
+```rust
+macro_rules! parser_test {
+  ($name:ident, $method:ident, $src:expr => $should_be:expr) =>  {
+    #[cfg(test)]
+    #[test]
+    fn $name() {
+      // create a codemap and tokenize our input string
+      let mut codemap = $crate::codemap::CodeMap::new();
+      let filemap = codemap.insert_file("dummy.pas", $src);
+      let tokenized = $crate::lex::tokenize(filemap.contents())
+        .chain_err(|| "Tokenizing failed")
+        .unwrap();
+      let tokens = filemap.register_tokens(tokenized);
+
+      let should_be = $should_be;
+
+      let mut parser = Parser::new(tokens, filemap);
+      let got = parser.$method().unwrap();
+
+      assert_eq!(got, should_be);
+    }
+  }
+}
+```
+
+Now we have our basic test harness set up, lets see if literal parsing works.
+
+```rust
+parser_test!(integer_literal, parse_literal, "123" => LiteralKind::Integer(123));
+parser_test!(parse_float_literal, parse_literal, "12.3" => LiteralKind::Decimal(12.3));
+// TODO: re-enable this when string parsing is implemented
+// parser_test!(parse_string_literal, parse_literal, "'12.3'" => LiteralKind::String("12.3".to_string()));
+```
+
+Another easy thing to implement is parsing identifiers and dotted identifiers 
+(e.g. `foo.bar.baz`).
+
+
+```rust
+impl Parser {
+  fn parse_ident(&mut self) -> Result<Ident> {
+    match self.peek() {
+      Some(&TokenKind::Identifier(_)) => {},
+      _ => bail!("Expected an identifier"),
+    }
+
+    let next = self.next().unwrap();
+
+    if let TokenKind::Identifier(ref ident) = next.kind {
+      Ok(Ident {
+        span: next.span,
+        name: ident.clone(),
+      })
+    } else {
+      unreachable!()
+    }
+  }
+
+  fn parse_dotted_ident(&mut self) -> Result<DottedIdent> {
+    let first = self.parse_ident()?;
+    let mut parts = vec![first];
+
+    while self.peek() == Some(&TokenKind::Dot) {
+      let _ = self.next();
+      let next = self.parse_ident()?;
+      parts.push(next);
+    }
+
+    let span = parts.iter().skip(1).fold(parts[0].span, |l, r| self.filemap.merge(l, r.span));
+
+    Ok(DottedIdent { span, parts })    
+  }
+}
+```
+
+We also want to test these.
+
+```rust
+parser_test!(parse_a_basic_ident, parse_ident, "foo" => "foo");
+parser_test!(parse_a_dotted_ident, parse_dotted_ident, "foo.bar.baz" => ["foo", "bar", "baz"].borrow());
 ```

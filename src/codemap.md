@@ -12,8 +12,10 @@ As usual, lets add in a couple imports and module-level documentation.
 use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
+use std::cmp;
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use lex::{Token, TokenKind};
 ```
 
 We start off with a `Span`. This is really just a wrapper around an integer,
@@ -185,7 +187,7 @@ impl FileMap {
             "End doesn't lie on a char boundary");
         debug_assert!(start < self.contents.len(), 
             "Start lies outside the content string");
-        debug_assert!(end < self.contents.len(), 
+        debug_assert!(end <= self.contents.len(), 
             "End lies outside the content string");
 
         let range = start..end;
@@ -210,6 +212,43 @@ impl FileMap {
             .find(|&(_, range)| range == needle)
             .map(|(span, _)| span)
             .cloned()
+    }
+
+    /// Merge two spans to get the span which includes both.
+    ///
+    /// As usual, the constraints from `insert_span()` also apply here. If
+    /// you try to enter two spans from different `FileMap`s, it'll panic.
+    pub fn merge(&self, first: Span, second: Span) -> Span {
+        let range_1 = self.range_of(first).expect("Can only merge spans from the same FileMap");
+        let range_2 = self.range_of(second).expect("Can only merge spans from the same FileMap");
+
+        let start = cmp::min(range_1.start, range_2.start);
+        let end = cmp::max(range_1.end, range_2.end);
+
+        self.insert_span(start, end)
+    }
+}
+```
+
+To help after the tokenizing step, lets add a method which will take a bunch
+of tokens and register them with a `FileMap`. The same caveats as with 
+`insert_span()` will apply here.
+
+```rust
+impl FileMap {
+    /// Register a set of tokenized inputs and turn them into a proper stream
+    /// of tokens. Note that all the caveats from `insert_span()` also apply 
+    /// here.
+    pub fn register_tokens(&self, tokens: Vec<(TokenKind, usize, usize)>) -> Vec<Token> {
+        let mut registered = Vec::new();
+
+        for (kind, start, end) in tokens {
+            let span = self.insert_span(start, end);
+            let token = Token::new(span, kind);
+            registered.push(token);
+        }
+
+        registered
     }
 }
 ```
@@ -288,6 +327,22 @@ mod tests {
         let span_2 = fm.insert_span(start, end);
 
         assert_eq!(span_1, span_2);
+    }
+
+    #[test]
+    fn join_multiple_spans() {
+        let mut map = CodeMap::new();
+        let src = "Hello World!";
+        let fm = map.insert_file("foo.rs", src);
+
+        let span_1 = fm.insert_span(0, 2);
+        let span_2 = fm.insert_span(3, 8);
+
+        let joined = fm.merge(span_1, span_2);
+        let equivalent_range = fm.range_of(joined).unwrap();
+
+        assert_eq!(equivalent_range.start, 0);
+        assert_eq!(equivalent_range.end, 8);
     }
 }
 ```
