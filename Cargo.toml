@@ -5,7 +5,7 @@ name = "static-analyser"
 version = "0.1.0"
 
 [build-dependencies]
-tango = "0.7"
+tango = "0.8"
 
 [dependencies]
 error-chain = "0.11"
