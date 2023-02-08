@@ -378,7 +378,7 @@ pub fn tokenize_single_token(data: &str) -> Result<(TokenKind, usize)> {
         ')' => (TokenKind::CloseParen, 1),
         '[' => (TokenKind::OpenSquare, 1),
         ']' => (TokenKind::CloseSquare, 1),
-        '0' ... '9' => tokenize_number(data).chain_err(|| "Couldn't tokenize a number")?,
+        '0' ..= '9' => tokenize_number(data).chain_err(|| "Couldn't tokenize a number")?,
         c @ '_' | c if c.is_alphabetic() => tokenize_ident(data)
             .chain_err(|| "Couldn't tokenize an identifier")?,
         other => bail!(ErrorKind::UnknownCharacter(other)),
