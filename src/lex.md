@@ -89,7 +89,7 @@ take some string slice (`&str`) and spit out either a token or an error.
 fn tokenize_ident(data: &str) -> Result<(TokenKind, usize)> {
     // identifiers can't start with a number
     match data.chars().next() {
-        Some(ch) if ch.is_digit(10) => bail!("Identifiers can't start with a number"),
+        Some(ch) if ch.is_ascii_digit() => bail!("Identifiers can't start with a number"),
         None => bail!(ErrorKind::UnexpectedEOF),
         _ => {},
     }
@@ -196,7 +196,7 @@ fn tokenize_number(data: &str) -> Result<(TokenKind, usize)> {
     let mut seen_dot = false;
 
     let (decimal, bytes_read) = take_while(data, |c| {
-        if c.is_digit(10) {
+        if c.is_ascii_digit() {
             true
         } else if c == '.' {
             if !seen_dot {
@@ -378,7 +378,7 @@ pub fn tokenize_single_token(data: &str) -> Result<(TokenKind, usize)> {
         ')' => (TokenKind::CloseParen, 1),
         '[' => (TokenKind::OpenSquare, 1),
         ']' => (TokenKind::CloseSquare, 1),
-        '0' ... '9' => tokenize_number(data).chain_err(|| "Couldn't tokenize a number")?,
+        '0' ..= '9' => tokenize_number(data).chain_err(|| "Couldn't tokenize a number")?,
         c @ '_' | c if c.is_alphabetic() => tokenize_ident(data)
             .chain_err(|| "Couldn't tokenize an identifier")?,
         other => bail!(ErrorKind::UnknownCharacter(other)),

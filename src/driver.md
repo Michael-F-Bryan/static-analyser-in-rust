@@ -3,7 +3,7 @@
 
 ```rust
 
-use codemap::{CodeMap, FileMap, Span};
+use codemap::CodeMap;
 ```
 
 The `Driver` contains a `CodeMap` and various other configuration settings 

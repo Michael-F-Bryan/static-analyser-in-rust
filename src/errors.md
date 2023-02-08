@@ -33,7 +33,6 @@ error_chain!{
         Utf8(::std::str::Utf8Error) #[doc = "An error parsing data as UTF-8"];
         FloatParsing(::std::num::ParseFloatError) #[doc = "A float parsing error"];
         IntParsing(::std::num::ParseIntError) #[doc = "An integer parsing error"];
-        
     }
 }
 ```
